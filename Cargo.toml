@@ -1,0 +1,40 @@
+[workspace]
+members = [
+    "crates/nexus-core",
+    "crates/nexus-emns",
+    "crates/nexus-memory",
+    "crates/nexus-teacher",
+    "crates/nexus-eval",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+
+[workspace.dependencies]
+# Burn 0.21 — primary training engine
+burn = { version = "0.21.0", default-features = false }
+
+# CubeCL 0.10 — custom compute kernels
+cubecl = "0.10.0"
+
+# Serialization & storage
+serde = { version = "1.0", features = ["derive"] }
+memmap2 = "0.9"
+zstd = "0.13"
+
+# Async & parallelism
+tokio = { version = "1.0", features = ["full"] }
+rayon = "1.10"
+
+# Data / tokenization
+tokenizers = { version = "0.21", default-features = false, features = ["onig", "hf-hub"] }
+parquet = { version = "56", default-features = false, features = ["arrow"] }
+arrow = { version = "56", default-features = false }
+
+# Utilities
+rand = "0.9"
+anyhow = "1.0"
+tracing = "0.1"
+tracing-subscriber = "0.3"

@@ -1,0 +1,30 @@
+# 14GB host: full debuginfo + incremental across workspace crates OOMs the IDE.
+# No incremental; trimmed debuginfo for dev/test profiles.
+[profile.dev]
+incremental = false
+debug = "line-tables-only"
+
+# Test profile: debug-assertions off.
+#
+# WHY: wgpu (via InstanceFlags::from_build_config) enables
+# InstanceFlags::VALIDATION when cfg!(debug_assertions), which loads the
+# system Khronos Vulkan validation layer. That layer segfaults during
+# process teardown on this machine's Mesa/ANV driver (Intel Iris Xe).
+#
+# Two independent mitigations, both required:
+#   1. debug-assertions = false here → no validation layer loaded at all.
+#      Residual crash rate drops ~90% -> a few percent.
+#   2. Run tests with `cargo test` (one process per BINARY), never nextest
+#      (one process per TEST). Short-lived processes (~1-2s, single test)
+#      race the cubecl/wgpu poll-thread teardown and crash ~100% of the
+#      time even without the layer; long-lived per-binary processes are
+#      stable (112/112 green across repeated full runs). See
+#      .config/nextest.toml for the same warning.
+[profile.test]
+incremental = false
+debug = "line-tables-only"
+opt-level = 1
+debug-assertions = false
+
+[profile.test.package."*"]
+opt-level = 0

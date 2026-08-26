@@ -1,0 +1,11 @@
+/target
+
+# Secrets
+.env
+.env.*
+
+# Tool-specific
+.codegraph/
+.config/
+.claude/
+*.log
