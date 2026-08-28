@@ -41,6 +41,23 @@ pub struct SerializedExpert {
     pub down_weight: SerializedTensor,
 }
 
+impl SerializedExpert {
+    pub fn from_expert_weights<B: Backend>(
+        id: u64,
+        inner: &Tensor<B, 2>,
+        outer: &Tensor<B, 2>,
+        down: &Tensor<B, 2>,
+    ) -> Self {
+        Self {
+            id,
+            inner_weight: SerializedTensor::from_tensor(inner),
+            outer_weight: SerializedTensor::from_tensor(outer),
+            down_weight: SerializedTensor::from_tensor(down),
+        }
+    }
+}
+
+
 /// Tiered storage configuration.
 #[derive(Clone, Debug)]
 pub struct WarehouseConfig {
@@ -87,6 +104,59 @@ impl<B: Backend> ExpertWarehouse<B> {
             l2_cache: RwLock::new(HashMap::new()),
             l2_order: RwLock::new(VecDeque::new()),
         })
+    }
+
+    /// Number of elements in L1 and L2 caches: (l1_len, l2_len).
+    pub fn cache_stats(&self) -> (usize, usize) {
+        let l1 = self.l1_cache.read().unwrap().len();
+        let l2 = self.l2_cache.read().unwrap().len();
+        (l1, l2)
+    }
+
+    /// Check if expert is resident in L1 or L2 or exists on L3 SSD.
+    pub fn contains_expert(&self, id: u64) -> bool {
+        if self.l1_cache.read().unwrap().contains_key(&id) {
+            return true;
+        }
+        if self.l2_cache.read().unwrap().contains_key(&id) {
+            return true;
+        }
+        self.config.ssd_dir.join(format!("expert_{}.bin", id)).exists()
+    }
+
+    /// Persist device tensors directly into the warehouse (L1 + L2 + L3).
+    pub fn persist_expert(
+        &self,
+        id: u64,
+        inner: &Tensor<B, 2>,
+        outer: &Tensor<B, 2>,
+        down: &Tensor<B, 2>,
+    ) -> anyhow::Result<()> {
+        let serialized = SerializedExpert::from_expert_weights(id, inner, outer, down);
+        self.put_l2(serialized.clone())?;
+        self.persist_to_l3(&serialized)?;
+
+        // Also warm L1 cache
+        let mut l1 = self.l1_cache.write().unwrap();
+        let mut order = self.l1_order.write().unwrap();
+        if l1.len() >= self.config.l1_capacity && !l1.contains_key(&id) {
+            if let Some(evicted_id) = order.pop_front() {
+                l1.remove(&evicted_id);
+            }
+        }
+        l1.insert(id, (inner.clone(), outer.clone(), down.clone()));
+        order.push_back(id);
+        Ok(())
+    }
+
+    /// Evict all L2 entries to L3 persistent storage.
+    pub fn evict_all_to_l3(&self) -> anyhow::Result<usize> {
+        let l2 = self.l2_cache.read().unwrap();
+        let count = l2.len();
+        for expert in l2.values() {
+            self.persist_to_l3(expert)?;
+        }
+        Ok(count)
     }
 
     /// Save an expert directly to L3 (SSD) with zstd compression.

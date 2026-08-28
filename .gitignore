@@ -9,3 +9,11 @@
 .config/
 .claude/
 *.log
+
+# Data & Models
+data/*.bin
+data/*.parquet
+data/tokenizer.json
+data/models/
+data/warehouse
+

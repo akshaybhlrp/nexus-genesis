@@ -30,7 +30,7 @@ rayon = "1.10"
 
 # Data / tokenization
 tokenizers = { version = "0.21", default-features = false, features = ["onig", "hf-hub"] }
-parquet = { version = "56", default-features = false, features = ["arrow"] }
+parquet = { version = "56", default-features = false, features = ["arrow", "snap", "zstd", "flate2", "flate2-rust_backened"] }
 arrow = { version = "56", default-features = false }
 
 # Utilities

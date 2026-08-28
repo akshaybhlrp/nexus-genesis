@@ -69,15 +69,22 @@ fn step_metrics_clone_and_debug() {
         loss: 3.14,
         mean_entropy: 0.8,
         mu: 0.01,
+        current_lr: 3e-4,
+        teacher_score: Some(0.85),
+        teacher_queried: true,
     };
     let m2 = m.clone();
     assert_eq!(m2.step, 5);
     assert_eq!(m2.loss, 3.14);
     assert_eq!(m2.mean_entropy, 0.8);
     assert_eq!(m2.mu, 0.01);
+    assert_eq!(m2.current_lr, 3e-4);
+    assert_eq!(m2.teacher_score, Some(0.85));
+    assert!(m2.teacher_queried);
     // Debug should not panic.
     let _ = format!("{:?}", m);
 }
+
 
 // ---------- train_hybrid: core behavior ----------
 

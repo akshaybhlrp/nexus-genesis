@@ -59,9 +59,22 @@ impl<B: Backend + 'static> AsyncPrefetcher<B> {
             .map_err(|e| anyhow::anyhow!("Prefetch request failed: {e}"))
     }
 
-    /// Receive the next prefetched expert weights.
+    /// Submit prefetch requests for multiple upcoming experts.
+    pub async fn request_many(&self, expert_ids: &[u64]) -> anyhow::Result<()> {
+        for &id in expert_ids {
+            self.request(id).await?;
+        }
+        Ok(())
+    }
+
+    /// Receive the next prefetched expert weights asynchronously.
     pub async fn recv(&mut self) -> Option<PrefetchResult<B>> {
         self.rx.recv().await
+    }
+
+    /// Try to receive prefetched weights without blocking.
+    pub fn try_recv(&mut self) -> Option<PrefetchResult<B>> {
+        self.rx.try_recv().ok()
     }
 
     /// Access the underlying warehouse.
@@ -69,3 +82,4 @@ impl<B: Backend + 'static> AsyncPrefetcher<B> {
         &self.warehouse
     }
 }
+

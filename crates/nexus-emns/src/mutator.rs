@@ -123,7 +123,7 @@ impl Mutator {
         let new_data = TensorData::new(raw, shape);
         let new_inner = Tensor::<B::InnerBackend, 2>::from_data(new_data, &device);
         let new_tensor = Tensor::from_inner(new_inner).require_grad();
-        Param::from_tensor(new_tensor)
+        param.map(|_| new_tensor)
     }
 
     /// Bump the step counter. Call once per training step.
@@ -456,7 +456,7 @@ mod tests {
         type TestB = burn::backend::Autodiff<burn::backend::Wgpu>;
 
         let cfg = MutationConfig { mu: 0.05, ..Default::default() };
-        let mut m1 = Mutator::new(cfg.clone(), 1, 1);
+        let m1 = Mutator::new(cfg.clone(), 1, 1);
         let mut m2 = Mutator::new(cfg, 1, 1);
         m2.advance();
 
@@ -558,7 +558,7 @@ mod tests {
 
     #[test]
     fn resistance_and_mu_interact_correctly() {
-        let mut cfg = MutationConfig::default();
+        let cfg = MutationConfig::default();
         let mut r = ExpertResistance::new(4);
 
         // Simulate 100 steps of routing to experts 0,1,3 (not 2).

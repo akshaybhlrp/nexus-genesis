@@ -15,9 +15,11 @@ use burn::optim::{AdamWConfig, GradientsParams, Optimizer};
 use burn::prelude::Module;
 use burn::tensor::backend::AutodiffBackend;
 use nexus_emns::mutator::{MutationConfig, Mutator};
+use nexus_teacher::TeacherValidator;
+use std::sync::Arc;
 
 /// Hyperparameters for hybrid training.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct HybridConfig {
     pub lr: f64,
     pub weight_decay: f32,
@@ -29,8 +31,32 @@ pub struct HybridConfig {
     pub mu_boost: f32,
     /// mu multiplier when entropy <= threshold.
     pub mu_decay: f32,
+    /// Teacher quality threshold: scores below this trigger extra exploration.
+    pub teacher_score_threshold: f32,
+    /// Learning rate multiplier on low teacher score.
+    pub teacher_lr_dampen: f64,
+    /// Optional external Teacher validator.
+    pub teacher: Option<Arc<TeacherValidator>>,
     pub mutation: MutationConfig,
 }
+
+impl std::fmt::Debug for HybridConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("HybridConfig")
+            .field("lr", &self.lr)
+            .field("weight_decay", &self.weight_decay)
+            .field("balance_weight", &self.balance_weight)
+            .field("entropy_threshold", &self.entropy_threshold)
+            .field("mu_boost", &self.mu_boost)
+            .field("mu_decay", &self.mu_decay)
+            .field("teacher_score_threshold", &self.teacher_score_threshold)
+            .field("teacher_lr_dampen", &self.teacher_lr_dampen)
+            .field("has_teacher", &self.teacher.is_some())
+            .field("mutation", &self.mutation)
+            .finish()
+    }
+}
+
 
 impl Default for HybridConfig {
     fn default() -> Self {
@@ -41,6 +67,9 @@ impl Default for HybridConfig {
             entropy_threshold: 0.7,
             mu_boost: 1.2,
             mu_decay: 0.95,
+            teacher_score_threshold: 0.4,
+            teacher_lr_dampen: 0.8,
+            teacher: None,
             mutation: MutationConfig::default(),
         }
     }
@@ -53,6 +82,9 @@ pub struct StepMetrics {
     pub loss: f32,
     pub mean_entropy: f32,
     pub mu: f32,
+    pub current_lr: f64,
+    pub teacher_score: Option<f32>,
+    pub teacher_queried: bool,
 }
 
 /// Run `steps` of hybrid backprop+mutation training on the MoE model.
@@ -81,6 +113,7 @@ where
     let mut model = model;
     let mut metrics = Vec::with_capacity(steps);
     let mut seq_iter = seqs;
+    let mut current_lr = config.lr;
 
     for step in 0..steps {
         let items: Vec<_> = (&mut seq_iter).take(batch_size).collect();
@@ -110,7 +143,7 @@ where
 
         // 2. Backward + optimizer step.
         let grads_params = GradientsParams::from_grads(total_loss.backward(), &model);
-        model = optim.step(config.lr, model, grads_params);
+        model = optim.step(current_lr, model, grads_params);
 
         // 3. Update per-expert resistance from route mass in forward pass.
         for (blk_idx, route) in routes.iter().enumerate() {
@@ -119,11 +152,56 @@ where
             }
         }
 
-        // 4. Adaptive mu based on router entropy.
+        // 4. Adaptive mu & LR based on router entropy and optional Teacher validation.
+        let mut teacher_score = None;
+        let mut teacher_queried = false;
+
         if mean_entropy > config.entropy_threshold {
-            mutator.config.mu *= config.mu_boost;
+            if let Some(ref teacher) = config.teacher {
+                teacher_queried = true;
+                let prompt_summary = format!("Step {step} High-Entropy Batch (entropy={mean_entropy:.3})");
+                let response_summary = format!("Loss={loss_val:.4}");
+
+                // Query teacher synchronously via tokio runtime or blocking fallback
+                let score = if let Ok(handle) = tokio::runtime::Handle::try_current() {
+                    let teacher_arc = Arc::clone(teacher);
+                    std::thread::spawn(move || {
+                        handle.block_on(async {
+                            teacher_arc.validate(&prompt_summary, &response_summary).await
+                        })
+                    })
+                    .join()
+                    .ok()
+                    .and_then(|res| res.ok())
+                    .map(|fb| fb.score)
+                    .unwrap_or(0.5)
+                } else {
+                    let rt = tokio::runtime::Builder::new_current_thread()
+                        .enable_all()
+                        .build()
+                        .ok();
+                    rt.and_then(|rt| {
+                        rt.block_on(teacher.validate(&prompt_summary, &response_summary)).ok()
+                    })
+                    .map(|fb| fb.score)
+                    .unwrap_or(0.5)
+                };
+
+                teacher_score = Some(score);
+                if score < config.teacher_score_threshold {
+                    mutator.config.mu *= config.mu_boost;
+                    current_lr = config.lr * config.teacher_lr_dampen;
+                } else {
+                    mutator.config.mu *= config.mu_decay;
+                    current_lr = config.lr;
+                }
+            } else {
+                mutator.config.mu *= config.mu_boost;
+                current_lr = config.lr;
+            }
         } else {
             mutator.config.mu *= config.mu_decay;
+            current_lr = config.lr;
         }
         mutator.config.clamp_mu();
 
@@ -136,6 +214,9 @@ where
             loss: loss_val,
             mean_entropy,
             mu: mutator.config.mu,
+            current_lr,
+            teacher_score,
+            teacher_queried,
         };
 
         if step % 10 == 0 || step == steps - 1 {
@@ -144,6 +225,8 @@ where
                 loss = m.loss,
                 entropy = m.mean_entropy,
                 mu = m.mu,
+                lr = m.current_lr,
+                teacher_score = ?m.teacher_score,
                 "hybrid train"
             );
         }
@@ -152,6 +235,7 @@ where
 
     (model, metrics)
 }
+
 
 /// Apply EMNS mutation to every expert in every MoE block.
 fn mutate_moe_experts<B: AutodiffBackend>(

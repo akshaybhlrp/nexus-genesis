@@ -186,3 +186,87 @@ fn write_seq<W: Write>(w: &mut W, seq: &[u32]) -> std::io::Result<()> {
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_header_valid() {
+        // Minimal valid header: vocab=1, seq_len=2, n_seqs=3 → expected size = 12 + 3*2*4 = 36.
+        let mut bytes = Vec::with_capacity(36);
+        bytes.extend(1u32.to_le_bytes());   // vocab
+        bytes.extend(2u32.to_le_bytes());   // seq_len
+        bytes.extend(3u32.to_le_bytes());   // n_seqs
+        bytes.extend([0u8; 24]);            // payload dummy
+        let (seq_len, n_seqs) = parse_header(&bytes).unwrap();
+        assert_eq!(seq_len, 2);
+        assert_eq!(n_seqs, 3);
+    }
+
+    #[test]
+    fn parse_header_too_short() {
+        let bytes = [0u8; 5];
+        match parse_header(&bytes) {
+            Err(PackedError::TooShort { len }) => assert_eq!(len, 5),
+            other => panic!("expected TooShort, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_header_zero_vocab() {
+        let mut bytes = vec![0u8; 12];
+        bytes[0..4].copy_from_slice(&0u32.to_le_bytes()); // vocab = 0
+        bytes[4..8].copy_from_slice(&1u32.to_le_bytes()); // seq_len
+        bytes[8..12].copy_from_slice(&1u32.to_le_bytes()); // n_seqs
+        match parse_header(&bytes) {
+            Err(PackedError::ZeroVocab) => {}
+            other => panic!("expected ZeroVocab, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_header_size_mismatch() {
+        // Header says 1 seq of len 4 → expected size = 12 + 1*4*4 = 28, but we give 30.
+        let mut bytes = vec![0u8; 30];
+        bytes[0..4].copy_from_slice(&1u32.to_le_bytes());   // vocab
+        bytes[4..8].copy_from_slice(&4u32.to_le_bytes());   // seq_len
+        bytes[8..12].copy_from_slice(&1u32.to_le_bytes());   // n_seqs
+        match parse_header(&bytes) {
+            Err(PackedError::SizeMismatch { len, expected }) => {
+                assert_eq!(len, 30);
+                assert_eq!(expected, 28);
+            }
+            other => panic!("expected SizeMismatch, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_header_overflow_payload() {
+        // n_seqs and seq_len chosen so that n_seqs * seq_len * 4 overflows usize (on 32-bit)
+        // or exceeds u64::MAX. Use large values that cause checked_mul to fail.
+        let mut bytes = vec![0u8; 12];
+        bytes[0..4].copy_from_slice(&1u32.to_le_bytes());
+        bytes[4..8].copy_from_slice(&u32::MAX.to_le_bytes()); // seq_len = 4_294_967_295
+        bytes[8..12].copy_from_slice(&u32::MAX.to_le_bytes()); // n_seqs = 4_294_967_295
+        match parse_header(&bytes) {
+            Err(PackedError::SizeMismatch { .. }) => {} // overflow leads to SizeMismatch with expected=MAX
+            other => panic!("expected SizeMismatch on overflow, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn packed_error_display() {
+        let e = PackedError::TooShort { len: 3 };
+        assert!(format!("{e}").contains("corrupt dataset"));
+        assert!(format!("{e}").contains("3 bytes"));
+
+        let e = PackedError::ZeroVocab;
+        assert!(format!("{e}").contains("vocab sentinel is 0"));
+
+        let e = PackedError::SizeMismatch { len: 100, expected: 200 };
+        let s = format!("{e}");
+        assert!(s.contains("100 bytes"));
+        assert!(s.contains("exactly 200"));
+    }
+}

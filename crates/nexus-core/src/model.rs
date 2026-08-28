@@ -65,13 +65,13 @@ pub struct RotaryPosition<B: Backend> {
 #[derive(Module, Debug)]
 pub struct Llama<B: Backend> {
     pub(crate) token_embed: Embedding<B>,
-    pub(crate) blocks: Vec<LlamaBlock<B>>,
+    pub blocks: Vec<LlamaBlock<B>>,
     pub(crate) final_norm: RmsNorm<B>,
     pub(crate) lm_head: Linear<B>,
     /// Carried from config so forward can reject out-of-vocab tokens.
     /// Backends don't bounds-check embed lookups (Wgpu silently reads
     /// garbage; CUDA may fault) — the guard must live here.
-    pub(crate) vocab_size: usize,
+    pub vocab_size: usize,
 }
 
 /// Fail-fast check at the trust boundary between raw token ids and the
@@ -188,6 +188,12 @@ impl<B: Backend> Llama<B> {
     pub fn forward_logits(&self, tokens: Tensor<B, 2, burn::tensor::Int>) -> Tensor<B, 3> {
         self.forward(tokens)
     }
+
+    /// Number of decoder blocks (public accessor so binaries/tests don't need
+    /// the private field).
+    pub fn n_blocks(&self) -> usize {
+        self.blocks.len()
+    }
 }
 
 #[cfg(all(test, feature = "wgpu"))]
@@ -216,5 +222,43 @@ mod tests {
         // Param estimate sanity: tiny config should be well under 1M params.
         let est = cfg.num_params();
         assert!(est > 0 && est < 1_000_000, "est={est}");
+    }
+
+    #[test]
+    fn vocab_size_carried_from_config() {
+        let device = Default::default();
+        let m = tiny().init::<TestB>(&device);
+        assert_eq!(m.vocab_size, 256);
+    }
+
+    #[test]
+    fn check_token_ids_passes_in_range() {
+        let device = Default::default();
+        let t = Tensor::<TestB, 2, burn::tensor::Int>::from_ints([[0u32, 127, 255]], &device);
+        check_token_ids(&t, 256); // must not panic
+    }
+
+    #[test]
+    #[should_panic(expected = "out of range")]
+    fn check_token_ids_rejects_oob() {
+        let device = Default::default();
+        let t = Tensor::<TestB, 2, burn::tensor::Int>::from_ints([[0u32, 256]], &device);
+        check_token_ids(&t, 256);
+    }
+
+    #[test]
+    #[should_panic(expected = "out of range")]
+    fn check_token_ids_rejects_exact_boundary() {
+        // id == vocab is out of range [0, vocab).
+        let device = Default::default();
+        let t = Tensor::<TestB, 2, burn::tensor::Int>::from_ints([[100u32]], &device);
+        check_token_ids(&t, 100);
+    }
+
+    #[test]
+    fn check_token_ids_accepts_boundary_minus_one() {
+        let device = Default::default();
+        let t = Tensor::<TestB, 2, burn::tensor::Int>::from_ints([[99u32]], &device);
+        check_token_ids(&t, 100); // must not panic
     }
 }
