@@ -2,33 +2,35 @@
 set -euo pipefail
 
 # ==============================================================================
-# NEXUS AUTONOMOUS DIGITAL ORGANISM RUNNER
+# NEXUS AUTONOMOUS DIGITAL ORGANISM CONTROLLER (SCRATCH-TRAINED MOE)
 # Automates continuous cycles: Training -> Teacher Validation -> Nightly Sleep -> Eval -> Generation
 # ==============================================================================
 
 CYCLES=${1:-1}
 STEPS_PER_CYCLE=${2:-30}
-DATASET=${3:-"data/fineweb.bin"}
-MODEL_DIR=${4:-"data/models/smollm2-135m"}
+DATASET=${3:-"data/domain_stream.bin"}
 
 echo "════════════════════════════════════════════════════════════════"
-echo "  🧬 NEXUS AUTONOMOUS ORGANISM LIFECYCLE CONTROLLER"
+echo "  🧬 NEXUS AUTONOMOUS SCRATCH-TRAINED MOE ORGANISM"
 echo "  Cycles: $CYCLES | Steps/Cycle: $STEPS_PER_CYCLE"
-echo "  Dataset: $DATASET | Model: $MODEL_DIR"
+echo "  Dataset: $DATASET"
 echo "════════════════════════════════════════════════════════════════"
 
 # Ensure dataset exists
 if [ ! -f "$DATASET" ]; then
-    echo "⚠️  Dataset '$DATASET' not found. Packing default sample..."
-    if [ -f "data/sample_corpus.parquet" ] && [ -f "data/tokenizer.json" ]; then
+    echo "⚠️  Dataset '$DATASET' not found. Checking fallback dataset..."
+    if [ -f "data/fineweb.bin" ]; then
+        DATASET="data/fineweb.bin"
+    elif [ -f "data/domain_train.parquet" ] && [ -f "data/tokenizer.json" ]; then
+        echo ">> Packing domain dataset..."
         cargo run --release -p nexus-core --bin nexus-pack-data -- \
             --tokenizer data/tokenizer.json \
             --out "$DATASET" \
             --seq-len 128 \
-            --max-tokens 500000 \
-            data/sample_corpus.parquet
+            --max-tokens 2000000 \
+            data/domain_train.parquet
     else
-        echo "❌ Missing data prerequisites in data/. Exiting."
+        echo "❌ Missing dataset in data/. Exiting."
         exit 1
     fi
 fi
@@ -40,7 +42,7 @@ for cycle in $(seq 1 "$CYCLES"); do
     echo "└──────────────────────────────────────────────────────────────┘"
 
     echo ""
-    echo ">> [Phase A] 🧠 Waking state: Hybrid MoE Training + Teacher Conscience..."
+    echo ">> [Phase A] 🧠 Waking state: Hybrid Scratch MoE Training + Teacher Conscience..."
     cargo run --release -p nexus-core --bin nexus-train-hybrid -- \
         "$STEPS_PER_CYCLE" \
         "$DATASET" \

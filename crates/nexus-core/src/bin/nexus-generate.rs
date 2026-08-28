@@ -1,11 +1,11 @@
-//! Autoregressive text generation and token sampling binary with HuggingFace weights support.
+//! Autoregressive text generation for native Scratch-Trained Nexus MoE models.
 //!
 //! Usage:
-//!   cargo run --release -p nexus-core --bin nexus-generate -- [prompt] [--model data/models/smollm2-135m] [--tokens 30] [--temperature 0.7]
+//!   cargo run --release -p nexus-core --bin nexus-generate -- [prompt] [--tokens 30] [--temperature 0.7]
 
 use burn::tensor::Tensor;
-use nexus_core::import::import_hf_to_llama;
 use nexus_core::model::{LlamaConfig, check_token_ids};
+use nexus_core::moe::{upcycle_dense, RouterConfig};
 use std::path::Path;
 use tokenizers::Tokenizer;
 
@@ -17,8 +17,7 @@ fn main() -> anyhow::Result<()> {
         .init();
 
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let mut prompt = "The future of artificial intelligence is".to_string();
-    let mut model_dir_str = "data/models/smollm2-135m".to_string();
+    let mut prompt = "The digital organism is".to_string();
     let mut max_tokens = 30usize;
     let mut temperature = 0.7f32;
 
@@ -30,9 +29,6 @@ fn main() -> anyhow::Result<()> {
             if let Ok(t) = args[i].parse() {
                 max_tokens = t;
             }
-        } else if arg == "--model" && i + 1 < args.len() {
-            i += 1;
-            model_dir_str = args[i].clone();
         } else if arg == "--temperature" && i + 1 < args.len() {
             i += 1;
             if let Ok(temp) = args[i].parse() {
@@ -44,23 +40,16 @@ fn main() -> anyhow::Result<()> {
         i += 1;
     }
 
-    println!("=== Nexus Autoregressive Inference ===");
+    println!("=== Nexus Native Scratch-Trained MoE Inference ===");
     println!("Prompt: \"{prompt}\"");
-    println!("Model Path: {model_dir_str}");
     println!("Max Tokens: {max_tokens} | Temperature: {temperature:.2}");
 
-    let model_dir = Path::new(&model_dir_str);
-    let tok_path = if model_dir.join("tokenizer.json").exists() {
-        model_dir.join("tokenizer.json")
-    } else {
-        Path::new("data/tokenizer.json").to_path_buf()
-    };
-
+    let tok_path = Path::new("data/tokenizer.json");
     if !tok_path.exists() {
         eprintln!("Tokenizer file '{}' not found.", tok_path.display());
         std::process::exit(1);
     }
-    let tokenizer = Tokenizer::from_file(&tok_path)
+    let tokenizer = Tokenizer::from_file(tok_path)
         .map_err(|e| anyhow::anyhow!("failed to load tokenizer: {e}"))?;
 
     let encoding = tokenizer.encode(prompt.as_str(), false)
@@ -73,22 +62,17 @@ fn main() -> anyhow::Result<()> {
     println!("Initial token count: {}", token_ids.len());
 
     let device = Default::default();
+    let vocab_size = 50_257usize;
 
-    let (model, vocab_size) = if model_dir.exists() && model_dir.join("model.safetensors").exists() {
-        println!("\n[Loading Pretrained SmolLM2 Open Weights into Nexus Engine...]");
-        let m = import_hf_to_llama::<Backend>(model_dir, &device)?;
-        let v = m.vocab_size;
-        println!("✓ Successfully loaded {} LLaMA blocks (vocab={v})!", m.n_blocks());
-        (m, v)
-    } else {
-        println!("\n[Initializing Random Weight Baseline...]");
-        let v = 50_257usize;
-        let cfg = LlamaConfig::new(v, 256, 8, 4)
-            .with_max_seq_len(256)
-            .with_d_ff(512);
-        let m = cfg.init::<Backend>(&device);
-        (m, v)
-    };
+    // Build scratch LLaMA and upcycle to MoE (4 blocks x 4 experts)
+    let cfg = LlamaConfig::new(vocab_size, 256, 8, 4)
+        .with_max_seq_len(256)
+        .with_d_ff(512);
+    let dense = cfg.init::<Backend>(&device);
+    let router_cfg = RouterConfig::new(4);
+    let moe = upcycle_dense(&dense, &router_cfg);
+
+    println!("✓ Scratch MoE Model initialized: {} blocks × {} experts", moe.blocks.len(), moe.blocks[0].experts.len());
 
     println!("\n[Generating text...]");
     print!("{prompt}");
@@ -108,7 +92,7 @@ fn main() -> anyhow::Result<()> {
         let input_tensor = Tensor::<Backend, 2, burn::tensor::Int>::from_data(tensor_data, &device);
 
         check_token_ids(&input_tensor, vocab_size);
-        let logits = model.forward(input_tensor);
+        let (logits, _, _, _) = moe.forward_with_balance(input_tensor);
 
         // Extract logits for last position: [1, vocab_size]
         let last_logits = logits.slice([0..1, (seq_len - 1)..seq_len, 0..vocab_size]);

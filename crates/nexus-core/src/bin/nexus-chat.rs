@@ -1,10 +1,9 @@
-//! Interactive terminal REPL / chat interface for Nexus digital organism.
+//! Interactive terminal REPL / chat interface for native Scratch-Trained Nexus MoE digital organism.
 //!
 //! Usage:
-//!   cargo run --release -p nexus-core --bin nexus-chat -- [--model data/models/smollm2-135m] [--temperature 0.7]
+//!   cargo run --release -p nexus-core --bin nexus-chat -- [--temperature 0.7]
 
 use burn::tensor::Tensor;
-use nexus_core::import::import_hf_to_llama;
 use nexus_core::model::{LlamaConfig, check_token_ids};
 use nexus_core::moe::{upcycle_dense, RouterConfig};
 use std::io::{self, BufRead, Write};
@@ -19,16 +18,12 @@ fn main() -> anyhow::Result<()> {
         .init();
 
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let mut model_dir_str = "data/models/smollm2-135m".to_string();
     let mut temperature = 0.7f32;
     let max_tokens = 64usize;
 
     let mut i = 0;
     while i < args.len() {
-        if args[i] == "--model" && i + 1 < args.len() {
-            i += 1;
-            model_dir_str = args[i].clone();
-        } else if args[i] == "--temperature" && i + 1 < args.len() {
+        if args[i] == "--temperature" && i + 1 < args.len() {
             i += 1;
             if let Ok(temp) = args[i].parse() {
                 temperature = temp;
@@ -38,47 +33,33 @@ fn main() -> anyhow::Result<()> {
     }
 
     println!("╔════════════════════════════════════════════════════════════════╗");
-    println!("║                   NEXUS INTERACTIVE REPL                       ║");
+    println!("║              NEXUS SCRATCH-TRAINED MOE REPL                    ║");
     println!("║       Hardware-Agnostic Self-Evolving MoE Brain Terminal       ║");
     println!("╚════════════════════════════════════════════════════════════════╝");
     println!("Type 'exit', 'quit', or Ctrl-D to leave.\n");
 
-    let model_dir = Path::new(&model_dir_str);
-    let tok_path = if model_dir.join("tokenizer.json").exists() {
-        model_dir.join("tokenizer.json")
-    } else {
-        Path::new("data/tokenizer.json").to_path_buf()
-    };
-
+    let tok_path = Path::new("data/tokenizer.json");
     if !tok_path.exists() {
         eprintln!("Tokenizer '{}' not found.", tok_path.display());
         std::process::exit(1);
     }
-    let tokenizer = Tokenizer::from_file(&tok_path)
+    let tokenizer = Tokenizer::from_file(tok_path)
         .map_err(|e| anyhow::anyhow!("Failed to load tokenizer: {e}"))?;
 
     let device = Default::default();
+    let vocab_size = 50_257usize;
 
-    println!("[1/2] Loading Brain Weights into GPU Engine...");
-    let (dense_model, vocab_size) = if model_dir.exists() && model_dir.join("model.safetensors").exists() {
-        let m = import_hf_to_llama::<Backend>(model_dir, &device)?;
-        let v = m.vocab_size;
-        println!("  ✓ Loaded {} LLaMA blocks from {} (vocab={v})", m.n_blocks(), model_dir.display());
-        (m, v)
-    } else {
-        let v = 50_257usize;
-        let cfg = LlamaConfig::new(v, 256, 8, 4)
-            .with_max_seq_len(256)
-            .with_d_ff(512);
-        let m = cfg.init::<Backend>(&device);
-        println!("  ✓ Initialized default baseline model (vocab={v})");
-        (m, v)
-    };
+    println!("[1/2] Initializing Scratch LLaMA Core...");
+    let cfg = LlamaConfig::new(vocab_size, 256, 8, 4)
+        .with_max_seq_len(256)
+        .with_d_ff(512);
+    let dense_model = cfg.init::<Backend>(&device);
+    println!("  ✓ Initialized 4 blocks (vocab={vocab_size}, d_model=256, d_ff=512)");
 
     println!("[2/2] Upcycling into Hierarchical MoE Structure...");
     let router_cfg = RouterConfig::new(4);
     let moe_model = upcycle_dense(&dense_model, &router_cfg);
-    println!("  ✓ MoE Brain Ready: {} blocks × {} experts each (Total: {} experts)",
+    println!("  ✓ Scratch MoE Brain Ready: {} blocks × {} experts each (Total: {} experts)",
         moe_model.blocks.len(),
         moe_model.blocks[0].experts.len(),
         moe_model.blocks.len() * moe_model.blocks[0].experts.len()
@@ -129,7 +110,7 @@ fn main() -> anyhow::Result<()> {
         let start_time = std::time::Instant::now();
         let mut generated_count = 0usize;
         let mut last_entropy = 0.0f32;
-        let mut top_experts: Vec<usize> = Vec::new();
+        let mut active_experts: Vec<usize> = Vec::new();
 
         for _ in 0..max_tokens {
             let cur_len = token_ids.len();
@@ -149,7 +130,7 @@ fn main() -> anyhow::Result<()> {
             last_entropy = entropy;
 
             if let Some(first_route) = routes.first() {
-                top_experts = first_route
+                active_experts = first_route
                     .expert_mass
                     .iter()
                     .enumerate()
@@ -193,8 +174,8 @@ fn main() -> anyhow::Result<()> {
                 io::stdout().flush()?;
             }
 
-            // Stop at EOS / newline
-            if picked == 2 || picked == 0 || (generated_count > 10 && picked == 13) {
+            // Stop at EOS
+            if picked == 2 || picked == 0 {
                 break;
             }
         }
@@ -204,7 +185,7 @@ fn main() -> anyhow::Result<()> {
 
         println!();
         println!("  └─ [Telemetry] Tokens: {generated_count} | Speed: {tok_per_sec:.1} tok/s | Entropy: {last_entropy:.3} | Active Experts: {:?}",
-            top_experts
+            active_experts
         );
         println!();
     }

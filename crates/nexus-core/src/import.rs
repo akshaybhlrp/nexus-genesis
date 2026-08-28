@@ -298,6 +298,20 @@ pub fn import_hf_to_llama<B: Backend>(model_dir: &Path, device: &B::Device) -> R
             block.ffn_norm.gamma = Param::from_tensor(Tensor::<B, 1>::from_data(TensorData::new(d, s), device));
         }
 
+        // Self-Attention Projections
+        if let Ok((d, s)) = reader.get_2d_transposed(&format!("{prefix}.self_attn.q_proj.weight")) {
+            block.attn.query.weight = Param::from_tensor(Tensor::<B, 2>::from_data(TensorData::new(d, s), device));
+        }
+        if let Ok((d, s)) = reader.get_2d_transposed(&format!("{prefix}.self_attn.k_proj.weight")) {
+            block.attn.key.weight = Param::from_tensor(Tensor::<B, 2>::from_data(TensorData::new(d, s), device));
+        }
+        if let Ok((d, s)) = reader.get_2d_transposed(&format!("{prefix}.self_attn.v_proj.weight")) {
+            block.attn.value.weight = Param::from_tensor(Tensor::<B, 2>::from_data(TensorData::new(d, s), device));
+        }
+        if let Ok((d, s)) = reader.get_2d_transposed(&format!("{prefix}.self_attn.o_proj.weight")) {
+            block.attn.output.weight = Param::from_tensor(Tensor::<B, 2>::from_data(TensorData::new(d, s), device));
+        }
+
         // SwiGLU FFN Projections
         if let Ok((d, s)) = reader.get_2d_transposed(&format!("{prefix}.mlp.gate_proj.weight")) {
             block.ffn_gate_up.linear_inner.weight = Param::from_tensor(Tensor::<B, 2>::from_data(TensorData::new(d, s), device));
