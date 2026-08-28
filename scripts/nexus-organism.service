@@ -1,0 +1,22 @@
+[Unit]
+Description=Nexus Autonomous Continuous Learning Organism Daemon
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/akshay-bhalerao/Documents/nexus
+ExecStart=/home/akshay-bhalerao/Documents/nexus/scripts/nexus_daemon.sh
+Restart=always
+RestartSec=10
+
+# Resource Governance (Dynamic CPU & RAM Backoff)
+Nice=19
+CPUSchedulingPolicy=batch
+MemoryHigh=50%
+MemoryMax=60%
+
+# Environment
+Environment=PATH=/home/akshay-bhalerao/.cargo/bin:/usr/local/cuda/bin:/usr/bin:/bin
+
+[Install]
+WantedBy=default.target
