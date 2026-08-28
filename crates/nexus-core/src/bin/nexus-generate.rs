@@ -70,7 +70,17 @@ fn main() -> anyhow::Result<()> {
         .with_d_ff(1024);
     let dense = cfg.init::<Backend>(&device);
     let router_cfg = RouterConfig::new(8);
-    let moe = upcycle_dense(&dense, &router_cfg);
+    let mut moe = upcycle_dense(&dense, &router_cfg);
+
+    // Check for trained evolved experts in L3 SSD Warehouse
+    let wh_cfg = nexus_memory::WarehouseConfig::default();
+    if let Ok(warehouse) = nexus_memory::ExpertWarehouse::<Backend>::new(wh_cfg) {
+        if let Ok(count) = nexus_core::tiered::load_model_from_warehouse(&mut moe, &warehouse, &device) {
+            if count > 0 {
+                println!("✓ Loaded {count} evolved experts from L3 SSD Warehouse!");
+            }
+        }
+    }
 
     println!("✓ Scratch MoE Model initialized: {} blocks × {} experts", moe.blocks.len(), moe.blocks[0].experts.len());
 

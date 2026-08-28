@@ -58,8 +58,21 @@ fn main() -> anyhow::Result<()> {
 
     println!("[2/2] Upcycling into Hierarchical MoE Structure (64 Experts)...");
     let router_cfg = RouterConfig::new(8);
-    let moe_model = upcycle_dense(&dense_model, &router_cfg);
-    println!("  ✓ Scratch MoE Brain Ready: {} blocks × {} experts each (Total: {} experts)",
+    let mut moe_model = upcycle_dense(&dense_model, &router_cfg);
+
+    // Check for trained evolved experts in L3 SSD Warehouse
+    let wh_cfg = nexus_memory::WarehouseConfig::default();
+    if let Ok(warehouse) = nexus_memory::ExpertWarehouse::<Backend>::new(wh_cfg) {
+        if let Ok(count) = nexus_core::tiered::load_model_from_warehouse(&mut moe_model, &warehouse, &device) {
+            if count > 0 {
+                println!("  ✓ Successfully loaded {count} evolved experts from L3 SSD Warehouse!");
+            } else {
+                println!("  ℹ No evolved experts in warehouse yet. Starting fresh.");
+            }
+        }
+    }
+
+    println!("  ✓ MoE Brain Ready: {} blocks × {} experts each (Total: {} experts)",
         moe_model.blocks.len(),
         moe_model.blocks[0].experts.len(),
         moe_model.blocks.len() * moe_model.blocks[0].experts.len()

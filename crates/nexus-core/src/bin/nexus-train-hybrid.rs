@@ -7,7 +7,7 @@ use nexus_core::hybrid::{train_hybrid, HybridConfig};
 use nexus_core::model::LlamaConfig;
 use nexus_core::moe::{upcycle_dense, RouterConfig};
 use nexus_core::stream::{packed_stream, synthetic_stream};
-use nexus_core::tiered::offload_model_to_warehouse;
+use nexus_core::tiered::{load_model_from_warehouse, offload_model_to_warehouse};
 use nexus_memory::{ExpertWarehouse, WarehouseConfig};
 use nexus_teacher::{TeacherConfig, TeacherValidator};
 use std::path::Path;
@@ -24,7 +24,6 @@ fn main() {
     let mut steps: usize = 100;
     let mut dataset_path: Option<String> = None;
     let mut with_teacher = false;
-    let mut tiered = false;
 
     let mut batch_size: usize = 4;
 
@@ -33,8 +32,6 @@ fn main() {
         let arg = &args[i];
         if arg == "--with-teacher" {
             with_teacher = true;
-        } else if arg == "--tiered" {
-            tiered = true;
         } else if arg == "--batch-size" && i + 1 < args.len() {
             i += 1;
             if let Ok(b) = args[i].parse::<usize>() {
@@ -71,7 +68,18 @@ fn main() {
 
     // 2. Upcycle to MoE (8 experts per block x 8 blocks = 64 total experts, top-2 routing).
     let router_cfg = RouterConfig::new(8);
-    let moe = upcycle_dense(&dense, &router_cfg);
+    let mut moe = upcycle_dense(&dense, &router_cfg);
+
+    // Auto-resume existing weights from L3 SSD Warehouse if present
+    let warehouse = ExpertWarehouse::<B>::new(WarehouseConfig::default()).ok();
+    if let Some(wh) = &warehouse {
+        if let Ok(count) = load_model_from_warehouse(&mut moe, wh, &device) {
+            if count > 0 {
+                tracing::info!(count, "resumed evolved expert weights from L3 SSD warehouse");
+            }
+        }
+    }
+
     let n_experts = moe.blocks.first().map(|b| b.experts.len()).unwrap_or(8);
     let n_blocks = moe.blocks.len();
     tracing::info!(n_blocks, n_experts, "upcycled to MoE");
@@ -110,14 +118,11 @@ fn main() {
         )
     };
 
-    // 5. Optionally offload model to tiered warehouse.
-    if tiered {
-        let wh_cfg = WarehouseConfig::default();
-        if let Ok(warehouse) = ExpertWarehouse::<B>::new(wh_cfg) {
-            match offload_model_to_warehouse(&trained_model, &warehouse) {
-                Ok(count) => tracing::info!(count, "persisted experts to tiered L1/L2/L3 warehouse"),
-                Err(e) => tracing::error!(error = %e, "failed to persist experts to warehouse"),
-            }
+    // 5. Always persist model to tiered warehouse for continuous learning.
+    if let Some(wh) = &warehouse {
+        match offload_model_to_warehouse(&trained_model, wh) {
+            Ok(count) => tracing::info!(count, "persisted evolved experts to tiered L1/L2/L3 warehouse"),
+            Err(e) => tracing::error!(error = %e, "failed to persist experts to warehouse"),
         }
     }
 
