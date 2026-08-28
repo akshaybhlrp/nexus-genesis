@@ -52,10 +52,10 @@ fn main() -> anyhow::Result<()> {
     let vocab_size = 50_257usize;
     let seq_len = dataset.seq_len;
 
-    // 1. Build and evaluate Dense Baseline
-    let cfg = LlamaConfig::new(vocab_size, 256, 8, 4)
+    // 1. Build and evaluate Dense Baseline (85M MoE Target)
+    let cfg = LlamaConfig::new(vocab_size, 384, 12, 8)
         .with_max_seq_len(seq_len)
-        .with_d_ff(512);
+        .with_d_ff(1024);
     let device = Default::default();
     let dense = cfg.init::<Backend>(&device);
 
@@ -65,9 +65,9 @@ fn main() -> anyhow::Result<()> {
         .expect("dense evaluation failed");
     println!("  ✓ Dense Result: {dense_report}");
 
-    // 2. Upcycle and evaluate MoE Model
+    // 2. Upcycle and evaluate MoE Model (64 experts)
     println!("\n[2. Evaluating MoE Brain Structure...]");
-    let router_cfg = RouterConfig::new(4);
+    let router_cfg = RouterConfig::new(8);
     let moe = upcycle_dense(&dense, &router_cfg);
     let moe_report = evaluate_moe(&moe, &dataset, skip, n_seqs, 2)
         .expect("moe evaluation failed");

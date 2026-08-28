@@ -49,15 +49,15 @@ fn main() -> anyhow::Result<()> {
     let device = Default::default();
     let vocab_size = 50_257usize;
 
-    println!("[1/2] Initializing Scratch LLaMA Core...");
-    let cfg = LlamaConfig::new(vocab_size, 256, 8, 4)
+    println!("[1/2] Initializing Scaled Scratch LLaMA Core (85M MoE Target)...");
+    let cfg = LlamaConfig::new(vocab_size, 384, 12, 8)
         .with_max_seq_len(256)
-        .with_d_ff(512);
+        .with_d_ff(1024);
     let dense_model = cfg.init::<Backend>(&device);
-    println!("  ✓ Initialized 4 blocks (vocab={vocab_size}, d_model=256, d_ff=512)");
+    println!("  ✓ Initialized 8 blocks (vocab={vocab_size}, d_model=384, d_ff=1024, heads=12)");
 
-    println!("[2/2] Upcycling into Hierarchical MoE Structure...");
-    let router_cfg = RouterConfig::new(4);
+    println!("[2/2] Upcycling into Hierarchical MoE Structure (64 Experts)...");
+    let router_cfg = RouterConfig::new(8);
     let moe_model = upcycle_dense(&dense_model, &router_cfg);
     println!("  ✓ Scratch MoE Brain Ready: {} blocks × {} experts each (Total: {} experts)",
         moe_model.blocks.len(),

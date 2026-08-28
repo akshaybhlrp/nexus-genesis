@@ -64,12 +64,12 @@ fn main() -> anyhow::Result<()> {
     let device = Default::default();
     let vocab_size = 50_257usize;
 
-    // Build scratch LLaMA and upcycle to MoE (4 blocks x 4 experts)
-    let cfg = LlamaConfig::new(vocab_size, 256, 8, 4)
+    // Build scratch LLaMA and upcycle to MoE (8 blocks x 8 experts = 64 experts)
+    let cfg = LlamaConfig::new(vocab_size, 384, 12, 8)
         .with_max_seq_len(256)
-        .with_d_ff(512);
+        .with_d_ff(1024);
     let dense = cfg.init::<Backend>(&device);
-    let router_cfg = RouterConfig::new(4);
+    let router_cfg = RouterConfig::new(8);
     let moe = upcycle_dense(&dense, &router_cfg);
 
     println!("✓ Scratch MoE Model initialized: {} blocks × {} experts", moe.blocks.len(), moe.blocks[0].experts.len());

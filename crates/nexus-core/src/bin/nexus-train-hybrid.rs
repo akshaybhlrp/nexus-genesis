@@ -61,18 +61,18 @@ fn main() {
         None => (1024, 128),
     };
 
-    // 1. Build dense model.
-    let cfg = LlamaConfig::new(vocab_size, 256, 8, 4)
+    // 1. Build dense model (85M MoE scaled configuration for 3GB VRAM target).
+    let cfg = LlamaConfig::new(vocab_size, 384, 12, 8)
         .with_max_seq_len(seq_len)
-        .with_d_ff(512);
+        .with_d_ff(1024);
     tracing::info!(steps, batch_size, params = cfg.num_params(), "building dense model");
     let device = Default::default();
     let dense = cfg.init::<B>(&device);
 
-    // 2. Upcycle to MoE (4 experts per block, top-2 routing).
-    let router_cfg = RouterConfig::new(4);
+    // 2. Upcycle to MoE (8 experts per block x 8 blocks = 64 total experts, top-2 routing).
+    let router_cfg = RouterConfig::new(8);
     let moe = upcycle_dense(&dense, &router_cfg);
-    let n_experts = moe.blocks.first().map(|b| b.experts.len()).unwrap_or(4);
+    let n_experts = moe.blocks.first().map(|b| b.experts.len()).unwrap_or(8);
     let n_blocks = moe.blocks.len();
     tracing::info!(n_blocks, n_experts, "upcycled to MoE");
 
