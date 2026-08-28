@@ -10,7 +10,7 @@
 set -u
 
 PROJECT_DIR="/home/akshay-bhalerao/Documents/nexus"
-DATASET="$PROJECT_DIR/data/domain_stream.bin"
+DATASET="$PROJECT_DIR/data/full_50m_stream.bin"
 LOG_FILE="$PROJECT_DIR/data/nexus_daemon.log"
 MIN_FREE_VRAM_MB=1400
 

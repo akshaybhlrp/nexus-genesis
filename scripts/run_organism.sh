@@ -8,7 +8,7 @@ set -euo pipefail
 
 CYCLES=${1:-1}
 STEPS_PER_CYCLE=${2:-30}
-DATASET=${3:-"data/domain_stream.bin"}
+DATASET=${3:-"data/full_50m_stream.bin"}
 
 echo "════════════════════════════════════════════════════════════════"
 echo "  🧬 NEXUS AUTONOMOUS SCRATCH-TRAINED MOE ORGANISM"
@@ -48,7 +48,7 @@ for cycle in $(seq 1 "$CYCLES"); do
         "$DATASET" \
         --with-teacher \
         --tiered \
-        --batch-size 2
+        --batch-size 4
 
     echo ""
     echo ">> [Phase B] 🌙 Sleeping state: Nightly Expert Consolidation & Pruning..."
