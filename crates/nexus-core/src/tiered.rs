@@ -52,12 +52,18 @@ pub fn load_model_from_warehouse<B: Backend>(
     for (blk_idx, block) in model.blocks.iter_mut().enumerate() {
         for (exp_idx, expert) in block.experts.iter_mut().enumerate() {
             let id = global_expert_id(blk_idx, exp_idx);
-            let (inner, outer, down) = warehouse.get_expert(id, device)?;
-
-            expert.gate_up.linear_inner.weight = burn::module::Param::from_tensor(inner);
-            expert.gate_up.linear_outer.weight = burn::module::Param::from_tensor(outer);
-            expert.down.weight = burn::module::Param::from_tensor(down);
-            total += 1;
+            if let Ok((inner, outer, down)) = warehouse.get_expert(id, device) {
+                // Verify shape compatibility before applying
+                if inner.shape() == expert.gate_up.linear_inner.weight.val().shape()
+                    && outer.shape() == expert.gate_up.linear_outer.weight.val().shape()
+                    && down.shape() == expert.down.weight.val().shape()
+                {
+                    expert.gate_up.linear_inner.weight = burn::module::Param::from_tensor(inner);
+                    expert.gate_up.linear_outer.weight = burn::module::Param::from_tensor(outer);
+                    expert.down.weight = burn::module::Param::from_tensor(down);
+                    total += 1;
+                }
+            }
         }
     }
     Ok(total)

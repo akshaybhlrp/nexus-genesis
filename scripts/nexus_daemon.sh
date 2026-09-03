@@ -9,7 +9,7 @@
 
 set -u
 
-PROJECT_DIR="/home/akshay-bhalerao/Documents/nexus"
+PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DATASET="$PROJECT_DIR/data/full_50m_stream.bin"
 LOG_FILE="$PROJECT_DIR/data/nexus_daemon.log"
 MIN_FREE_VRAM_MB=1400

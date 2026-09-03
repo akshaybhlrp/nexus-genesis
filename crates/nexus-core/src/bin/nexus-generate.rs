@@ -1,7 +1,7 @@
 //! Autoregressive text generation for native Scratch-Trained Nexus MoE models.
 //!
 //! Usage:
-//!   cargo run --release -p nexus-core --bin nexus-generate -- [prompt] [--tokens 30] [--temperature 0.7]
+//!   cargo run --release -p nexus-core --bin nexus-generate -- [prompt] [--tokens 30] [--temperature 0.7] [--cpu]
 
 use burn::tensor::Tensor;
 use nexus_core::model::{LlamaConfig, check_token_ids};
@@ -9,80 +9,67 @@ use nexus_core::moe::{upcycle_dense, RouterConfig};
 use std::path::Path;
 use tokenizers::Tokenizer;
 
-type Backend = burn::backend::Wgpu;
+fn run_inference<B: burn::tensor::backend::Backend>(
+    prompt: &str,
+    mut token_ids: Vec<u32>,
+    max_tokens: usize,
+    temperature: f32,
+    tokenizer: &Tokenizer,
+    vocab_size: usize,
+    model_dir: Option<&Path>,
+    max_layers: Option<usize>,
+) -> anyhow::Result<()> {
+    let device: B::Device = Default::default();
 
-fn main() -> anyhow::Result<()> {
-    tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::INFO)
-        .init();
+    let (moe, vocab_size) = if let Some(dir) = model_dir {
+        println!("Loading pretrained foundation model from: {}", dir.display());
+        let dense = nexus_core::import::import_hf_to_llama_scaled::<B>(dir, &device, max_layers)?;
+        let router_cfg = RouterConfig::new(4);
+        let mut moe = upcycle_dense(&dense, &router_cfg);
 
-    let args: Vec<String> = std::env::args().skip(1).collect();
-    let mut prompt = "The digital organism is".to_string();
-    let mut max_tokens = 30usize;
-    let mut temperature = 0.7f32;
-
-    let mut i = 0;
-    while i < args.len() {
-        let arg = &args[i];
-        if arg == "--tokens" && i + 1 < args.len() {
-            i += 1;
-            if let Ok(t) = args[i].parse() {
-                max_tokens = t;
-            }
-        } else if arg == "--temperature" && i + 1 < args.len() {
-            i += 1;
-            if let Ok(temp) = args[i].parse() {
-                temperature = temp;
-            }
-        } else if !arg.starts_with("--") {
-            prompt = arg.clone();
-        }
-        i += 1;
-    }
-
-    println!("=== Nexus Native Scratch-Trained MoE Inference ===");
-    println!("Prompt: \"{prompt}\"");
-    println!("Max Tokens: {max_tokens} | Temperature: {temperature:.2}");
-
-    let tok_path = Path::new("data/tokenizer.json");
-    if !tok_path.exists() {
-        eprintln!("Tokenizer file '{}' not found.", tok_path.display());
-        std::process::exit(1);
-    }
-    let tokenizer = Tokenizer::from_file(tok_path)
-        .map_err(|e| anyhow::anyhow!("failed to load tokenizer: {e}"))?;
-
-    let encoding = tokenizer.encode(prompt.as_str(), false)
-        .map_err(|e| anyhow::anyhow!("tokenization failed: {e}"))?;
-    let mut token_ids: Vec<u32> = encoding.get_ids().to_vec();
-    if token_ids.is_empty() {
-        token_ids.push(1); // default BOS token
-    }
-
-    println!("Initial token count: {}", token_ids.len());
-
-    let device = Default::default();
-    let vocab_size = 50_257usize;
-
-    // Build scratch LLaMA and upcycle to MoE (8 blocks x 8 experts = 64 experts)
-    let cfg = LlamaConfig::new(vocab_size, 384, 12, 8)
-        .with_max_seq_len(256)
-        .with_d_ff(1024);
-    let dense = cfg.init::<Backend>(&device);
-    let router_cfg = RouterConfig::new(8);
-    let mut moe = upcycle_dense(&dense, &router_cfg);
-
-    // Check for trained evolved experts in L3 SSD Warehouse
-    let wh_cfg = nexus_memory::WarehouseConfig::default();
-    if let Ok(warehouse) = nexus_memory::ExpertWarehouse::<Backend>::new(wh_cfg) {
-        if let Ok(count) = nexus_core::tiered::load_model_from_warehouse(&mut moe, &warehouse, &device) {
-            if count > 0 {
-                println!("✓ Loaded {count} evolved experts from L3 SSD Warehouse!");
+        // Auto-resume checkpoint if available
+        let checkpoint_mgr = nexus_core::checkpoint::CheckpointManager::new("data/checkpoints").ok();
+        if let Some(mgr) = checkpoint_mgr {
+            if mgr.has_checkpoint() {
+                if let Ok(loaded) = mgr.load_model(moe.clone(), &device) {
+                    moe = loaded;
+                    println!("✓ Resumed active trained weights from checkpoint!");
+                }
             }
         }
-    }
 
-    println!("✓ Scratch MoE Model initialized: {} blocks × {} experts", moe.blocks.len(), moe.blocks[0].experts.len());
+        let wh_cfg = nexus_memory::WarehouseConfig::default();
+        if let Ok(warehouse) = nexus_memory::ExpertWarehouse::<B>::new(wh_cfg) {
+            if let Ok(count) = nexus_core::tiered::load_model_from_warehouse(&mut moe, &warehouse, &device) {
+                if count > 0 {
+                    println!("✓ Loaded {count} evolved experts from L3 SSD Warehouse!");
+                }
+            }
+        }
+
+        println!("✓ Upcycled pretrained foundation model to MoE ({} blocks × {} experts)", moe.blocks.len(), moe.blocks[0].experts.len());
+        (moe, dense.vocab_size)
+    } else {
+        // Build scratch LLaMA and upcycle to MoE (8 blocks x 8 experts = 64 experts)
+        let cfg = LlamaConfig::new(vocab_size, 384, 12, 8)
+            .with_max_seq_len(256)
+            .with_d_ff(1024);
+        let dense = cfg.init::<B>(&device);
+        let router_cfg = RouterConfig::new(8);
+        let mut moe = upcycle_dense(&dense, &router_cfg);
+
+        // Check for trained evolved experts in L3 SSD Warehouse
+        let wh_cfg = nexus_memory::WarehouseConfig::default();
+        if let Ok(warehouse) = nexus_memory::ExpertWarehouse::<B>::new(wh_cfg) {
+            if let Ok(count) = nexus_core::tiered::load_model_from_warehouse(&mut moe, &warehouse, &device) {
+                if count > 0 {
+                    println!("✓ Loaded {count} evolved experts from L3 SSD Warehouse!");
+                }
+            }
+        }
+        println!("✓ Scratch MoE Model initialized: {} blocks × {} experts", moe.blocks.len(), moe.blocks[0].experts.len());
+        (moe, vocab_size)
+    };
 
     println!("\n[Generating text...]");
     print!("{prompt}");
@@ -99,7 +86,7 @@ fn main() -> anyhow::Result<()> {
         let seq_len = input_slice.len();
         let raw_i64: Vec<i64> = input_slice.iter().map(|&x| (x as usize % vocab_size) as i64).collect();
         let tensor_data = burn::tensor::TensorData::new(raw_i64, [1, seq_len]);
-        let input_tensor = Tensor::<Backend, 2, burn::tensor::Int>::from_data(tensor_data, &device);
+        let input_tensor = Tensor::<B, 2, burn::tensor::Int>::from_data(tensor_data, &device);
 
         check_token_ids(&input_tensor, vocab_size);
         let (logits, _, _, _) = moe.forward_with_balance(input_tensor);
@@ -153,4 +140,105 @@ fn main() -> anyhow::Result<()> {
 
     println!("\n\n✓ Generation complete.");
     Ok(())
+}
+
+fn main() -> anyhow::Result<()> {
+    tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::INFO)
+        .init();
+
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let mut prompt = "The digital organism is".to_string();
+    let mut max_tokens = 30usize;
+    let mut temperature = 0.7f32;
+    let mut use_cpu = false;
+    let mut model_dir: Option<std::path::PathBuf> = None;
+
+    let mut max_layers: Option<usize> = std::env::var("NEXUS_LAYERS")
+        .ok()
+        .and_then(|l| l.parse().ok())
+        .or(Some(4));
+
+    let mut i = 0;
+    while i < args.len() {
+        let arg = &args[i];
+        if arg == "--tokens" && i + 1 < args.len() {
+            i += 1;
+            if let Ok(t) = args[i].parse() {
+                max_tokens = t;
+            }
+        } else if arg == "--temperature" && i + 1 < args.len() {
+            i += 1;
+            if let Ok(temp) = args[i].parse() {
+                temperature = temp;
+            }
+        } else if arg == "--layers" && i + 1 < args.len() {
+            i += 1;
+            if let Ok(l) = args[i].parse::<usize>() {
+                max_layers = if l == 0 { None } else { Some(l) };
+            }
+        } else if arg == "--model" && i + 1 < args.len() {
+            i += 1;
+            model_dir = Some(std::path::PathBuf::from(&args[i]));
+        } else if arg == "--cpu" {
+            use_cpu = true;
+        } else if !arg.starts_with("--") {
+            prompt = arg.clone();
+        }
+        i += 1;
+    }
+
+    println!("=== Nexus Native MoE Text Generation ===");
+    println!("Prompt: \"{prompt}\"");
+    let backend_str = if use_cpu {
+        "CPU (NdArray)"
+    } else if cfg!(feature = "cuda") {
+        "NVIDIA GPU (CUDA)"
+    } else if cfg!(feature = "rocm") {
+        "AMD GPU (ROCm / HIP)"
+    } else if cfg!(feature = "vulkan") {
+        "Vulkan (WGPU)"
+    } else if cfg!(feature = "metal") {
+        "Apple Silicon (Metal WGPU)"
+    } else {
+        "Universal GPU (WGPU)"
+    };
+    println!("Max Tokens: {max_tokens} | Temperature: {temperature:.2} | Backend: {backend_str}");
+
+    let tok_path = model_dir.as_ref().map(|d| d.join("tokenizer.json")).filter(|p| p.exists())
+        .unwrap_or_else(|| Path::new("data/tokenizer.json").to_path_buf());
+
+    if !tok_path.exists() {
+        eprintln!("Tokenizer file '{}' not found.", tok_path.display());
+        std::process::exit(1);
+    }
+    let tokenizer = Tokenizer::from_file(&tok_path)
+        .map_err(|e| anyhow::anyhow!("failed to load tokenizer: {e}"))?;
+
+    let encoding = tokenizer.encode(prompt.as_str(), false)
+        .map_err(|e| anyhow::anyhow!("tokenization failed: {e}"))?;
+    let mut token_ids: Vec<u32> = encoding.get_ids().to_vec();
+    if token_ids.is_empty() {
+        token_ids.push(1); // default BOS token
+    }
+
+    println!("Initial token count: {}", token_ids.len());
+    let vocab_size = tokenizer.get_vocab_size(true);
+
+    if use_cpu {
+        run_inference::<burn::backend::NdArray>(&prompt, token_ids, max_tokens, temperature, &tokenizer, vocab_size, model_dir.as_deref(), max_layers)
+    } else {
+        #[cfg(feature = "cuda")]
+        {
+            run_inference::<burn::backend::Cuda>(&prompt, token_ids, max_tokens, temperature, &tokenizer, vocab_size, model_dir.as_deref(), max_layers)
+        }
+        #[cfg(all(feature = "rocm", not(feature = "cuda")))]
+        {
+            run_inference::<burn::backend::Rocm>(&prompt, token_ids, max_tokens, temperature, &tokenizer, vocab_size, model_dir.as_deref(), max_layers)
+        }
+        #[cfg(all(not(feature = "cuda"), not(feature = "rocm")))]
+        {
+            run_inference::<burn::backend::Wgpu>(&prompt, token_ids, max_tokens, temperature, &tokenizer, vocab_size, model_dir.as_deref(), max_layers)
+        }
+    }
 }

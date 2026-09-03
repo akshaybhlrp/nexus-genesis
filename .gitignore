@@ -1,19 +1,49 @@
-/target
+/target/
+target/
 
-# Secrets
+# Data, Checkpoints & Model Weights (never commit massive binary blobs)
+data/*
+!data/.gitkeep
+
+# Checkpoint binaries & state files
+*.mpk
+*.bin
+*.parquet
+*.pt
+*.safetensors
+
+# Logs, PIDs, Temp files
+*.log
+*.pid
+*.tmp*
+data/.nexus_hourly.pid
+
+# Environment & Secrets
 .env
 .env.*
+!.env.example
 
-# Tool-specific
+# Python cache & virtualenvs
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+
+# Node / Web UI
+node_modules/
+dist/
+.vite/
+
+# Tool-specific & IDE files
 .codegraph/
 .config/
 .claude/
-*.log
-
-# Data & Models
-data/*.bin
-data/*.parquet
-data/tokenizer.json
-data/models/
-data/warehouse
+.gemini/
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
 

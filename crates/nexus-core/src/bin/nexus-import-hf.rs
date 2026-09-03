@@ -11,6 +11,9 @@ use nexus_core::moe::{upcycle_dense, RouterConfig};
 use nexus_memory::{ExpertWarehouse, WarehouseConfig};
 use std::path::Path;
 
+#[cfg(feature = "cuda")]
+type Backend = burn::backend::Cuda;
+#[cfg(not(feature = "cuda"))]
 type Backend = burn::backend::Wgpu;
 
 fn main() -> anyhow::Result<()> {
@@ -50,10 +53,13 @@ fn main() -> anyhow::Result<()> {
     println!("\n[Safetensors Container]");
     println!("- Total Tensor Keys: {}", reader.tensor_names().len());
 
-    let device = Default::default();
+    #[cfg(feature = "cuda")]
+    let device = burn::backend::cuda::CudaDevice::default();
+    #[cfg(not(feature = "cuda"))]
+    let device = burn::backend::wgpu::WgpuDevice::DiscreteGpu(0);
 
     // 3. Load into Nexus LLaMA
-    println!("\n[Loading Dense Model into Nexus Engine...]");
+    println!("\n[Loading Dense Model into Nexus Engine on NVIDIA T500...]");
     let llama = import_hf_to_llama::<Backend>(model_dir, &device)?;
     println!("✓ Successfully loaded {} LLaMA blocks!", llama.n_blocks());
 

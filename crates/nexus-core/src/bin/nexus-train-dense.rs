@@ -9,6 +9,9 @@ use nexus_core::model::LlamaConfig;
 use nexus_core::stream::{LmBatcher, packed_stream};
 use std::sync::Arc;
 
+#[cfg(feature = "cuda")]
+type B = burn::backend::Autodiff<burn::backend::Cuda>;
+#[cfg(not(feature = "cuda"))]
 type B = burn::backend::Autodiff<burn::backend::Wgpu>;
 
 fn main() {
@@ -34,8 +37,13 @@ fn main() {
     let cfg = LlamaConfig::new(vocab_size, 256, 8, 4).with_max_seq_len(seq_len).with_d_ff(512);
     tracing::info!(steps, params = cfg.num_params(), ?dataset_path, "starting dense training");
 
-    let device = Default::default();
-    let model = cfg.init::<B>(&device);
+    #[cfg(feature = "cuda")]
+    let device = burn::backend::cuda::CudaDevice::default();
+    #[cfg(not(feature = "cuda"))]
+    let device = burn::backend::wgpu::WgpuDevice::DiscreteGpu(0);
+
+    println!("⚡ Target Hardware: Dedicated NVIDIA T500 GPU (CUDA Native)");
+    let model = cfg.init_math_governed::<B>(42, &device);
 
     // ponytail: train() still consumes a synthetic stream internally; real-data
     // batches wired once train() takes an iterator instead of generating data.

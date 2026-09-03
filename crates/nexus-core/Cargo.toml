@@ -4,9 +4,12 @@ version.workspace = true
 edition.workspace = true
 
 [features]
-default = ["wgpu"]
-cuda = ["burn/cuda", "nexus-emns/cuda"]
-wgpu = ["burn/wgpu", "nexus-emns/wgpu"]
+default = ["cuda"]
+cuda = ["burn/cuda", "nexus-emns/cuda", "nexus-weight-gen/cuda"]
+rocm = ["burn/rocm", "nexus-emns/rocm", "nexus-weight-gen/rocm"]
+vulkan = ["burn/vulkan", "nexus-emns/vulkan", "nexus-weight-gen/vulkan"]
+metal = ["burn/metal", "nexus-emns/metal", "nexus-weight-gen/metal"]
+wgpu = ["burn/wgpu", "nexus-emns/wgpu", "nexus-weight-gen/wgpu"]
 
 [dev-dependencies]
 tempfile = "3"
@@ -16,7 +19,8 @@ nexus-eval = { path = "../nexus-eval" }
 nexus-emns = { path = "../nexus-emns", default-features = false }
 nexus-memory = { path = "../nexus-memory" }
 nexus-teacher = { path = "../nexus-teacher" }
-burn = { workspace = true, features = ["train", "autodiff"] }
+nexus-weight-gen = { path = "../nexus-weight-gen" }
+burn = { workspace = true, features = ["train", "autodiff", "ndarray"] }
 
 serde = { workspace = true }
 serde_json = "1.0"

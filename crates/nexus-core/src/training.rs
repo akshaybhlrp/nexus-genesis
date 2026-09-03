@@ -54,6 +54,53 @@ where
     losses
 }
 
+/// Run `steps` training steps on a Math-Governed initialized model.
+pub fn train_math_governed<B>(
+    model: Llama<B>,
+    steps: usize,
+    batch_size: usize,
+    lr: f64,
+) -> Vec<f32>
+where
+    B: AutodiffBackend,
+{
+    let device = model.devices().first().cloned().unwrap_or_default();
+    let mut optim = AdamWConfig::new()
+        .with_weight_decay(0.01)
+        .init::<B, Llama<B>>();
+    let batcher = LmBatcher::<B>::new();
+    let batches: Vec<Vec<Sequence>> = {
+        let all: Vec<Sequence> = synthetic_stream(steps * batch_size, 256).collect();
+        all.chunks(batch_size).map(<[Sequence]>::to_vec).collect()
+    };
+
+    let mut model = model;
+    let mut losses = Vec::with_capacity(steps);
+
+    for (step, seqs) in batches.into_iter().enumerate() {
+        let batch = batcher.batch(seqs, &device);
+        let targets = batch.targets;
+
+        let logits = model.forward(batch.inputs);
+        let loss = lm_loss(logits, targets);
+        let value = loss
+            .clone()
+            .into_data()
+            .iter::<f32>()
+            .next()
+            .unwrap_or(f32::INFINITY);
+        losses.push(value);
+
+        let grads_params = GradientsParams::from_grads(loss.backward(), &model);
+        model = optim.step(lr, model, grads_params);
+
+        if step % 10 == 0 || step == steps - 1 {
+            tracing::info!(step, loss = value, "train_math_governed");
+        }
+    }
+    losses
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -74,6 +121,23 @@ mod tests {
         assert!(
             last < first * 0.95,
             "expected loss to drop, first={first} last={last}"
+        );
+    }
+
+    #[test]
+    fn math_governed_training_decreases_loss() {
+        let device = Default::default();
+        let cfg = crate::model::LlamaConfig::new(256, 64, 4, 2)
+            .with_max_seq_len(128)
+            .with_d_ff(128);
+        let model = cfg.init_math_governed::<TAB>(42, &device);
+        let losses = train_math_governed(model, 30, 4, 1e-3);
+        let first = losses.first().copied().unwrap();
+        let last = losses.last().copied().unwrap();
+        tracing::info!(first, last, "math governed loss delta");
+        assert!(
+            last < first * 0.95,
+            "expected math governed loss to drop, first={first} last={last}"
         );
     }
 }

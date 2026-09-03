@@ -1,0 +1,21 @@
+[package]
+name = "nexus-weight-gen"
+version.workspace = true
+edition.workspace = true
+description = "Mathematical weight generation for Nexus — invariant-preserving initialization"
+
+[features]
+default = ["cuda"]
+cuda = ["burn/cuda"]
+rocm = ["burn/rocm"]
+vulkan = ["burn/vulkan"]
+metal = ["burn/metal"]
+wgpu = ["burn/wgpu"]
+
+[dependencies]
+burn = { workspace = true, features = ["train", "autodiff", "ndarray"] }
+rand = { workspace = true }
+rayon = { workspace = true }
+serde = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }

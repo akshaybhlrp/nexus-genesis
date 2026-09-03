@@ -7,7 +7,7 @@
 use crate::model::{Llama, LlamaBlock};
 use burn::config::Config;
 use burn::nn::{Embedding, Linear, RmsNorm, SwiGlu};
-use burn::nn::attention::{MhaInput, MultiHeadAttention, generate_autoregressive_mask};
+use burn::nn::attention::{MultiHeadAttention, generate_autoregressive_mask};
 use burn::module::Module;
 use burn::tensor::backend::Backend;
 use burn::tensor::{Int, Tensor};
@@ -146,14 +146,31 @@ impl<B: Backend> MoEBlock<B> {
         let device = x.device();
         let t = batch * seq;
 
-        // Shared attention path (identical to dense block).
+        // Shared attention path with per-head RoPE on Q & K
         let normed = self.attn_norm.forward(x.clone());
-        let normed = self.rope.inner.forward(normed);
+        let n_heads = self.attn.n_heads;
+        let d_k = self.attn.d_k;
+
+        let q = self.attn.query.forward(normed.clone())
+            .reshape([batch, seq, n_heads, d_k])
+            .swap_dims(1, 2);
+        let k = self.attn.key.forward(normed.clone())
+            .reshape([batch, seq, n_heads, d_k])
+            .swap_dims(1, 2);
+        let v = self.attn.value.forward(normed)
+            .reshape([batch, seq, n_heads, d_k])
+            .swap_dims(1, 2);
+
+        let q = self.rope.inner.forward(q);
+        let k = self.rope.inner.forward(k);
+
+        let scale = (d_k as f32).sqrt();
+        let scores = q.matmul(k.transpose()).div_scalar(scale);
         let mask = generate_autoregressive_mask(batch, seq, &device);
-        let out = self
-            .attn
-            .forward(MhaInput::self_attn(normed).mask_attn(mask))
-            .context;
+        let scores = scores.mask_fill(mask.reshape([batch, 1, seq, seq]), -1e4);
+        let weights = burn::tensor::activation::softmax(scores, 3);
+        let context = weights.matmul(v).swap_dims(1, 2).reshape([batch, seq, n_heads * d_k]);
+        let out = self.attn.output.forward(context);
         let x = x + out;
 
         // --- Routing on the FFN-normed stream ---

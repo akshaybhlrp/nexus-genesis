@@ -106,19 +106,29 @@ impl<B: Backend> ExpertWarehouse<B> {
         })
     }
 
+    #[inline]
+    fn read_lock<T>(lock: &RwLock<T>) -> std::sync::RwLockReadGuard<'_, T> {
+        lock.read().unwrap_or_else(|e| e.into_inner())
+    }
+
+    #[inline]
+    fn write_lock<T>(lock: &RwLock<T>) -> std::sync::RwLockWriteGuard<'_, T> {
+        lock.write().unwrap_or_else(|e| e.into_inner())
+    }
+
     /// Number of elements in L1 and L2 caches: (l1_len, l2_len).
     pub fn cache_stats(&self) -> (usize, usize) {
-        let l1 = self.l1_cache.read().unwrap().len();
-        let l2 = self.l2_cache.read().unwrap().len();
+        let l1 = Self::read_lock(&self.l1_cache).len();
+        let l2 = Self::read_lock(&self.l2_cache).len();
         (l1, l2)
     }
 
     /// Check if expert is resident in L1 or L2 or exists on L3 SSD.
     pub fn contains_expert(&self, id: u64) -> bool {
-        if self.l1_cache.read().unwrap().contains_key(&id) {
+        if Self::read_lock(&self.l1_cache).contains_key(&id) {
             return true;
         }
-        if self.l2_cache.read().unwrap().contains_key(&id) {
+        if Self::read_lock(&self.l2_cache).contains_key(&id) {
             return true;
         }
         self.config.ssd_dir.join(format!("expert_{}.bin", id)).exists()
@@ -137,8 +147,8 @@ impl<B: Backend> ExpertWarehouse<B> {
         self.persist_to_l3(&serialized)?;
 
         // Also warm L1 cache
-        let mut l1 = self.l1_cache.write().unwrap();
-        let mut order = self.l1_order.write().unwrap();
+        let mut l1 = Self::write_lock(&self.l1_cache);
+        let mut order = Self::write_lock(&self.l1_order);
         if l1.len() >= self.config.l1_capacity && !l1.contains_key(&id) {
             if let Some(evicted_id) = order.pop_front() {
                 l1.remove(&evicted_id);
@@ -151,7 +161,7 @@ impl<B: Backend> ExpertWarehouse<B> {
 
     /// Evict all L2 entries to L3 persistent storage.
     pub fn evict_all_to_l3(&self) -> anyhow::Result<usize> {
-        let l2 = self.l2_cache.read().unwrap();
+        let l2 = Self::read_lock(&self.l2_cache);
         let count = l2.len();
         for expert in l2.values() {
             self.persist_to_l3(expert)?;
@@ -159,12 +169,19 @@ impl<B: Backend> ExpertWarehouse<B> {
         Ok(count)
     }
 
-    /// Save an expert directly to L3 (SSD) with zstd compression.
+    /// Save an expert directly to L3 (SSD) with zstd compression using atomic rename.
     pub fn persist_to_l3(&self, expert: &SerializedExpert) -> anyhow::Result<()> {
         let file_path = self.config.ssd_dir.join(format!("expert_{}.bin", expert.id));
+        let tmp_path = self.config.ssd_dir.join(format!("expert_{}.bin.tmp.{}", expert.id, std::process::id()));
         let encoded = bincode::serialize(expert)?;
         let compressed = zstd::encode_all(&encoded[..], 3)?;
-        std::fs::write(&file_path, compressed)?;
+        {
+            use std::io::Write;
+            let mut file = File::create(&tmp_path)?;
+            file.write_all(&compressed)?;
+            file.sync_all()?;
+        }
+        std::fs::rename(&tmp_path, &file_path)?;
         Ok(())
     }
 
@@ -181,8 +198,8 @@ impl<B: Backend> ExpertWarehouse<B> {
     /// Insert a serialized expert into L2 cache, spilling to L3 if full.
     pub fn put_l2(&self, expert: SerializedExpert) -> anyhow::Result<()> {
         let id = expert.id;
-        let mut l2 = self.l2_cache.write().unwrap();
-        let mut order = self.l2_order.write().unwrap();
+        let mut l2 = Self::write_lock(&self.l2_cache);
+        let mut order = Self::write_lock(&self.l2_order);
 
         if l2.len() >= self.config.l2_capacity && !l2.contains_key(&id) {
             if let Some(evicted_id) = order.pop_front() {
@@ -205,7 +222,7 @@ impl<B: Backend> ExpertWarehouse<B> {
     ) -> anyhow::Result<(Tensor<B, 2>, Tensor<B, 2>, Tensor<B, 2>)> {
         // 1. Check L1 Cache
         {
-            let l1 = self.l1_cache.read().unwrap();
+            let l1 = Self::read_lock(&self.l1_cache);
             if let Some(tensors) = l1.get(&id) {
                 return Ok((tensors.0.clone(), tensors.1.clone(), tensors.2.clone()));
             }
@@ -213,7 +230,7 @@ impl<B: Backend> ExpertWarehouse<B> {
 
         // 2. Check L2 Cache
         let expert = {
-            let l2 = self.l2_cache.read().unwrap();
+            let l2 = Self::read_lock(&self.l2_cache);
             l2.get(&id).cloned()
         };
 
@@ -234,8 +251,8 @@ impl<B: Backend> ExpertWarehouse<B> {
 
         // Put into L1 Cache
         {
-            let mut l1 = self.l1_cache.write().unwrap();
-            let mut order = self.l1_order.write().unwrap();
+            let mut l1 = Self::write_lock(&self.l1_cache);
+            let mut order = Self::write_lock(&self.l1_order);
 
             if l1.len() >= self.config.l1_capacity && !l1.contains_key(&id) {
                 if let Some(evicted_id) = order.pop_front() {

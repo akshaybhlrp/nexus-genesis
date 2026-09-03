@@ -14,7 +14,7 @@ CYCLES=${1:-10}
 STEPS_PER_CYCLE=${2:-50}
 DATASET="data/full_50m_stream.bin"
 
-PROJECT_DIR="/home/akshay-bhalerao/Documents/nexus"
+PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$PROJECT_DIR"
 
 echo "════════════════════════════════════════════════════════════════"

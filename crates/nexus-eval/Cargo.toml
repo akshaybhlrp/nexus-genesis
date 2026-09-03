@@ -11,8 +11,12 @@ tracing-subscriber = { workspace = true }
 anyhow = { workspace = true }
 
 [features]
-default = []
-cuda = ["burn/cuda"]
+default = ["cuda"]
+cuda = ["burn/cuda", "nexus-core/cuda"]
+rocm = ["burn/rocm", "nexus-core/rocm"]
+vulkan = ["burn/vulkan", "nexus-core/vulkan"]
+metal = ["burn/metal", "nexus-core/metal"]
+wgpu = ["burn/wgpu", "nexus-core/wgpu"]
 
 [dev-dependencies]
 tempfile = "3"

@@ -167,6 +167,56 @@ impl SafetensorsReader {
 
         Ok((transposed, [in_dim, out_dim]))
     }
+
+    /// Read 2D KV projection and expand GQA (Grouped Query Attention) if kv_heads < q_heads.
+    pub fn get_kv_proj_transposed(
+        &self,
+        name: &str,
+        d_model: usize,
+        n_heads: usize,
+        n_kv_heads: usize,
+    ) -> Result<(Vec<f32>, [usize; 2])> {
+        let (raw, shape) = self.get_tensor(name)?;
+        if shape.len() != 2 {
+            bail!("Expected 2D tensor for '{name}', found shape {:?}", shape);
+        }
+        let out_dim = shape[0];
+        let in_dim = shape[1];
+
+        if n_kv_heads == n_heads || out_dim == d_model {
+            return self.get_2d_transposed(name);
+        }
+
+        let head_dim = d_model / n_heads;
+        let groups = n_heads / n_kv_heads.max(1);
+        let expanded_out_dim = d_model;
+        let mut expanded_raw = vec![0.0f32; expanded_out_dim * in_dim];
+
+        for kv_h in 0..n_kv_heads {
+            for g in 0..groups {
+                let target_head = kv_h * groups + g;
+                for row in 0..head_dim {
+                    let src_row = kv_h * head_dim + row;
+                    let dst_row = target_head * head_dim + row;
+                    let src_offset = src_row * in_dim;
+                    let dst_offset = dst_row * in_dim;
+                    if src_offset + in_dim <= raw.len() && dst_offset + in_dim <= expanded_raw.len() {
+                        expanded_raw[dst_offset..dst_offset + in_dim]
+                            .copy_from_slice(&raw[src_offset..src_offset + in_dim]);
+                    }
+                }
+            }
+        }
+
+        let mut transposed = vec![0.0f32; expanded_out_dim * in_dim];
+        for i in 0..expanded_out_dim {
+            for j in 0..in_dim {
+                transposed[j * expanded_out_dim + i] = expanded_raw[i * in_dim + j];
+            }
+        }
+
+        Ok((transposed, [in_dim, expanded_out_dim]))
+    }
 }
 
 /// Convert IEEE 754 half-precision float (`f16`) bits to single-precision `f32`.
@@ -258,8 +308,21 @@ impl HfLlamaConfig {
 
 /// Import a full HuggingFace model into an initialized [`Llama`] instance.
 pub fn import_hf_to_llama<B: Backend>(model_dir: &Path, device: &B::Device) -> Result<Llama<B>> {
+    import_hf_to_llama_scaled(model_dir, device, None)
+}
+
+/// Import a HuggingFace model with an optional upper bound on the number of transformer layers.
+/// This allows scaling foundation models to fit constrained VRAM (e.g. 4GB GPUs) during training.
+pub fn import_hf_to_llama_scaled<B: Backend>(
+    model_dir: &Path,
+    device: &B::Device,
+    max_layers: Option<usize>,
+) -> Result<Llama<B>> {
     let hf_cfg = HfLlamaConfig::load_from_dir(model_dir)?;
-    let nexus_cfg = hf_cfg.to_nexus_config();
+    let mut nexus_cfg = hf_cfg.to_nexus_config();
+    if let Some(layers) = max_layers {
+        nexus_cfg.n_layers = layers.min(hf_cfg.num_hidden_layers);
+    }
     let mut model = nexus_cfg.init::<B>(device);
 
     let weights_path = model_dir.join("model.safetensors");
@@ -299,13 +362,17 @@ pub fn import_hf_to_llama<B: Backend>(model_dir: &Path, device: &B::Device) -> R
         }
 
         // Self-Attention Projections
+        let n_heads = hf_cfg.num_attention_heads;
+        let n_kv_heads = hf_cfg.num_key_value_heads.unwrap_or(n_heads);
+        let d_model = hf_cfg.hidden_size;
+
         if let Ok((d, s)) = reader.get_2d_transposed(&format!("{prefix}.self_attn.q_proj.weight")) {
             block.attn.query.weight = Param::from_tensor(Tensor::<B, 2>::from_data(TensorData::new(d, s), device));
         }
-        if let Ok((d, s)) = reader.get_2d_transposed(&format!("{prefix}.self_attn.k_proj.weight")) {
+        if let Ok((d, s)) = reader.get_kv_proj_transposed(&format!("{prefix}.self_attn.k_proj.weight"), d_model, n_heads, n_kv_heads) {
             block.attn.key.weight = Param::from_tensor(Tensor::<B, 2>::from_data(TensorData::new(d, s), device));
         }
-        if let Ok((d, s)) = reader.get_2d_transposed(&format!("{prefix}.self_attn.v_proj.weight")) {
+        if let Ok((d, s)) = reader.get_kv_proj_transposed(&format!("{prefix}.self_attn.v_proj.weight"), d_model, n_heads, n_kv_heads) {
             block.attn.value.weight = Param::from_tensor(Tensor::<B, 2>::from_data(TensorData::new(d, s), device));
         }
         if let Ok((d, s)) = reader.get_2d_transposed(&format!("{prefix}.self_attn.o_proj.weight")) {

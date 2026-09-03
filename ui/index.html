@@ -1,0 +1,720 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Nexus MoE — Autonomous Digital Organism Inference</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-primary: #07090e;
+      --bg-surface: #0f1422;
+      --bg-card: rgba(18, 24, 38, 0.75);
+      --bg-card-hover: rgba(26, 35, 56, 0.85);
+      --border-subtle: rgba(255, 255, 255, 0.08);
+      --border-accent: rgba(139, 92, 246, 0.35);
+      --accent-purple: #8b5cf6;
+      --accent-cyan: #06b6d4;
+      --accent-emerald: #10b981;
+      --accent-rose: #f43f5e;
+      --text-main: #f1f5f9;
+      --text-muted: #94a3b8;
+      --text-dim: #64748b;
+      --glow-purple: rgba(139, 92, 246, 0.25);
+      --glow-cyan: rgba(6, 182, 212, 0.25);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--bg-primary);
+      background-image: 
+        radial-gradient(circle at 15% 10%, rgba(139, 92, 246, 0.12) 0%, transparent 45%),
+        radial-gradient(circle at 85% 90%, rgba(6, 182, 212, 0.10) 0%, transparent 45%);
+      color: var(--text-main);
+      font-family: 'Inter', -apple-system, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow-x: hidden;
+    }
+
+    header {
+      border-bottom: 1px solid var(--border-subtle);
+      background: rgba(11, 15, 25, 0.85);
+      backdrop-filter: blur(12px);
+      padding: 1rem 2rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      position: sticky;
+      top: 0;
+      z-index: 50;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 0.85rem;
+    }
+
+    .brand-logo {
+      width: 38px;
+      height: 38px;
+      border-radius: 10px;
+      background: linear-gradient(135deg, var(--accent-purple), var(--accent-cyan));
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.25rem;
+      box-shadow: 0 0 20px var(--glow-purple);
+    }
+
+    .brand-title {
+      font-size: 1.35rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      background: linear-gradient(to right, #ffffff, #cbd5e1);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .brand-badge {
+      font-size: 0.7rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      padding: 0.2rem 0.6rem;
+      background: rgba(139, 92, 246, 0.15);
+      border: 1px solid rgba(139, 92, 246, 0.3);
+      color: #c4b5fd;
+      border-radius: 9999px;
+    }
+
+    .telemetry-strip {
+      display: flex;
+      align-items: center;
+      gap: 1.5rem;
+    }
+
+    .telemetry-item {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      font-size: 0.75rem;
+    }
+
+    .telemetry-label {
+      color: var(--text-dim);
+      font-weight: 500;
+      text-transform: uppercase;
+      font-size: 0.65rem;
+    }
+
+    .telemetry-value {
+      font-family: 'JetBrains Mono', monospace;
+      font-weight: 600;
+      color: var(--accent-cyan);
+    }
+
+    .telemetry-pill {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      background: rgba(16, 185, 129, 0.1);
+      border: 1px solid rgba(16, 185, 129, 0.25);
+      padding: 0.35rem 0.85rem;
+      border-radius: 9999px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: var(--accent-emerald);
+    }
+
+    .live-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--accent-emerald);
+      box-shadow: 0 0 10px var(--accent-emerald);
+      animation: pulse-dot 1.8s infinite;
+    }
+
+    @keyframes pulse-dot {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.4; transform: scale(0.85); }
+    }
+
+    main {
+      flex: 1;
+      padding: 2rem;
+      max-width: 1440px;
+      width: 100%;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: 460px 1fr;
+      gap: 2rem;
+    }
+
+    @media (max-width: 1024px) {
+      main {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .panel {
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      border-radius: 16px;
+      backdrop-filter: blur(16px);
+      padding: 1.75rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1.25rem;
+      box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.5);
+    }
+
+    .panel-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .panel-title {
+      font-size: 1.05rem;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      color: #f8fafc;
+    }
+
+    .quick-prompts {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+
+    .quick-btn {
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-muted);
+      padding: 0.35rem 0.75rem;
+      border-radius: 8px;
+      font-size: 0.75rem;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .quick-btn:hover {
+      background: rgba(139, 92, 246, 0.15);
+      border-color: var(--accent-purple);
+      color: #ffffff;
+      transform: translateY(-1px);
+    }
+
+    .control-group {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+
+    .control-label {
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      display: flex;
+      justify-content: space-between;
+    }
+
+    .control-val {
+      font-family: 'JetBrains Mono', monospace;
+      color: var(--accent-cyan);
+    }
+
+    textarea {
+      width: 100%;
+      height: 140px;
+      background: rgba(7, 10, 18, 0.75);
+      border: 1px solid var(--border-subtle);
+      border-radius: 12px;
+      color: var(--text-main);
+      padding: 1rem;
+      font-family: 'Inter', sans-serif;
+      font-size: 0.95rem;
+      resize: vertical;
+      transition: border-color 0.2s ease, box-shadow 0.2s ease;
+      line-height: 1.5;
+    }
+
+    textarea:focus {
+      outline: none;
+      border-color: var(--accent-purple);
+      box-shadow: 0 0 16px var(--glow-purple);
+    }
+
+    input[type="range"] {
+      width: 100%;
+      accent-color: var(--accent-purple);
+      cursor: pointer;
+    }
+
+    select {
+      width: 100%;
+      background: rgba(7, 10, 18, 0.75);
+      border: 1px solid var(--border-subtle);
+      border-radius: 10px;
+      color: var(--text-main);
+      padding: 0.65rem 0.85rem;
+      font-size: 0.85rem;
+      font-family: 'Inter', sans-serif;
+      cursor: pointer;
+    }
+
+    select:focus {
+      outline: none;
+      border-color: var(--accent-purple);
+    }
+
+    .btn-generate {
+      background: linear-gradient(135deg, var(--accent-purple), #6366f1);
+      border: none;
+      color: white;
+      padding: 0.9rem 1.5rem;
+      border-radius: 12px;
+      font-size: 0.95rem;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.6rem;
+      transition: all 0.2s ease;
+      box-shadow: 0 4px 20px var(--glow-purple);
+      margin-top: 0.5rem;
+    }
+
+    .btn-generate:hover:not(:disabled) {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 28px rgba(139, 92, 246, 0.45);
+    }
+
+    .btn-generate:active:not(:disabled) {
+      transform: translateY(0);
+    }
+
+    .btn-generate:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    .spinner {
+      width: 18px;
+      height: 18px;
+      border: 2px solid rgba(255, 255, 255, 0.25);
+      border-top-color: #ffffff;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      display: none;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .stats-bar {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 0.85rem;
+    }
+
+    .stat-card {
+      background: rgba(15, 20, 34, 0.6);
+      border: 1px solid var(--border-subtle);
+      border-radius: 12px;
+      padding: 0.75rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.2rem;
+    }
+
+    .stat-card .label {
+      font-size: 0.65rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      color: var(--text-dim);
+    }
+
+    .stat-card .val {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 1.15rem;
+      font-weight: 700;
+      color: #ffffff;
+    }
+
+    .output-container {
+      flex: 1;
+      background: rgba(7, 10, 18, 0.85);
+      border: 1px solid var(--border-subtle);
+      border-radius: 14px;
+      padding: 1.25rem;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.92rem;
+      line-height: 1.6;
+      color: #e2e8f0;
+      white-space: pre-wrap;
+      overflow-y: auto;
+      min-height: 220px;
+      position: relative;
+    }
+
+    .output-container .prompt-echo {
+      color: #94a3b8;
+      margin-bottom: 0.75rem;
+    }
+
+    .output-container .generated-stream {
+      color: #38bdf8;
+      font-weight: 500;
+    }
+
+    .output-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 0.5rem;
+    }
+
+    .btn-secondary {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-muted);
+      padding: 0.45rem 0.85rem;
+      border-radius: 8px;
+      font-size: 0.8rem;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      transition: all 0.2s ease;
+    }
+
+    .btn-secondary:hover {
+      background: rgba(255, 255, 255, 0.1);
+      color: #ffffff;
+    }
+
+    .moe-visualizer {
+      background: rgba(15, 20, 34, 0.4);
+      border: 1px solid var(--border-subtle);
+      border-radius: 14px;
+      padding: 1rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+
+    .moe-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.75rem;
+      color: var(--text-dim);
+    }
+
+    .moe-grid {
+      display: grid;
+      grid-template-columns: repeat(15, 1fr);
+      gap: 4px;
+    }
+
+    .block-cell {
+      height: 28px;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      border-radius: 6px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.55rem;
+      font-family: 'JetBrains Mono', monospace;
+      color: var(--text-dim);
+      transition: all 0.3s ease;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .block-cell.active {
+      background: rgba(139, 92, 246, 0.25);
+      border-color: var(--accent-purple);
+      color: #c4b5fd;
+      box-shadow: 0 0 10px rgba(139, 92, 246, 0.4);
+      transform: scale(1.05);
+    }
+
+    .block-cell.active::after {
+      content: '';
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background: var(--accent-cyan);
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="brand">
+      <div class="brand-logo">⚡</div>
+      <div>
+        <div style="display: flex; align-items: center; gap: 0.5rem;">
+          <h1 class="brand-title">Nexus</h1>
+          <span class="brand-badge">MoE Organism</span>
+        </div>
+        <div style="font-size: 0.7rem; color: var(--text-dim);">Autonomous Sparse Neural Engine</div>
+      </div>
+    </div>
+
+    <div class="telemetry-strip">
+      <div class="telemetry-item">
+        <span class="telemetry-label">Hardware Device</span>
+        <span class="telemetry-value" id="gpu-name">NVIDIA T500</span>
+      </div>
+      <div class="telemetry-item">
+        <span class="telemetry-label">VRAM Footprint</span>
+        <span class="telemetry-value" id="gpu-vram">-- / 4,096 MB</span>
+      </div>
+      <div class="telemetry-item">
+        <span class="telemetry-label">GPU Load / Temp</span>
+        <span class="telemetry-value" id="gpu-load">--% | --°C</span>
+      </div>
+      <div class="telemetry-pill">
+        <div class="live-dot"></div>
+        <span>CUDA Engine Ready</span>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <!-- Left Panel: Prompt & Controls -->
+    <div class="panel">
+      <div class="panel-header">
+        <h2 class="panel-title"><span>✍️</span> Prompt Playground</h2>
+      </div>
+
+      <div class="quick-prompts">
+        <button class="quick-btn" onclick="setPrompt('The future of artificial intelligence is')">Future of AI</button>
+        <button class="quick-btn" onclick="setPrompt('Quantum computing fundamentally relies on')">Quantum Mechanics</button>
+        <button class="quick-btn" onclick="setPrompt('In rust programming, zero-cost abstractions mean')">Rust Systems</button>
+        <button class="quick-btn" onclick="setPrompt('The mathematical nature of consciousness involves')">Consciousness</button>
+      </div>
+
+      <div class="control-group">
+        <label class="control-label" for="prompt-input">Input Prompt</label>
+        <textarea id="prompt-input" placeholder="Type a prompt to run through the upcycled MoE model on NVIDIA T500...">The future of artificial intelligence is</textarea>
+      </div>
+
+      <div class="control-group">
+        <label class="control-label" for="model-select">Active Foundation Model</label>
+        <select id="model-select">
+          <option value="smollm2-135m">SmolLM2-135M (30 Blocks × 4 Experts MoE)</option>
+        </select>
+      </div>
+
+      <div class="control-group">
+        <div class="control-label">
+          <span>Max Tokens</span>
+          <span class="control-val" id="tokens-val">30</span>
+        </div>
+        <input type="range" id="tokens-slider" min="10" max="80" value="30" oninput="document.getElementById('tokens-val').innerText = this.value">
+      </div>
+
+      <div class="control-group">
+        <div class="control-label">
+          <span>Temperature (Sampling Softness)</span>
+          <span class="control-val" id="temp-val">0.70</span>
+        </div>
+        <input type="range" id="temp-slider" min="0.1" max="1.5" step="0.05" value="0.70" oninput="document.getElementById('temp-val').innerText = parseFloat(this.value).toFixed(2)">
+      </div>
+
+      <button id="btn-run" class="btn-generate" onclick="runInference()">
+        <span class="spinner" id="btn-spinner"></span>
+        <span id="btn-text">⚡ Run Inference on T500</span>
+      </button>
+    </div>
+
+    <!-- Right Panel: Live Output & MoE Visualization -->
+    <div class="panel" style="display: flex; flex-direction: column;">
+      <div class="panel-header">
+        <h2 class="panel-title"><span>🧠</span> MoE Stream & Telemetry</h2>
+        <div class="output-actions">
+          <button class="btn-secondary" onclick="copyOutput()">📋 Copy</button>
+          <button class="btn-secondary" onclick="clearOutput()">🧹 Clear</button>
+        </div>
+      </div>
+
+      <div class="stats-bar">
+        <div class="stat-card">
+          <span class="label">Tokens/Sec</span>
+          <span class="val" id="stat-speed" style="color: var(--accent-emerald);">--</span>
+        </div>
+        <div class="stat-card">
+          <span class="label">Latency</span>
+          <span class="val" id="stat-latency">-- s</span>
+        </div>
+        <div class="stat-card">
+          <span class="label">Active Experts</span>
+          <span class="val" id="stat-experts" style="color: var(--accent-purple);">60/120</span>
+        </div>
+        <div class="stat-card">
+          <span class="label">Architecture</span>
+          <span class="val" style="font-size: 0.9rem; color: var(--accent-cyan);">30L MoE</span>
+        </div>
+      </div>
+
+      <!-- Real-time MoE Routing Visualizer -->
+      <div class="moe-visualizer">
+        <div class="moe-header">
+          <span>30 TRANSFORMER BLOCKS (TOP-2 EXPERT ROUTING)</span>
+          <span id="routing-status" style="color: var(--accent-emerald);">IDLE</span>
+        </div>
+        <div class="moe-grid" id="moe-grid">
+          <!-- 30 Blocks dynamically inserted -->
+        </div>
+      </div>
+
+      <!-- Output Display -->
+      <div class="output-container" id="output-box">
+        <div class="prompt-echo" id="output-echo">// Output will appear here...</div>
+        <div class="generated-stream" id="output-text">Press 'Run Inference on T500' to query the MoE organism.</div>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    // Initialize 30 MoE Block indicators
+    const moeGrid = document.getElementById('moe-grid');
+    for (let i = 0; i < 30; i++) {
+      const cell = document.createElement('div');
+      cell.className = 'block-cell';
+      cell.id = `block-${i}`;
+      cell.innerText = `L${i+1}`;
+      moeGrid.appendChild(cell);
+    }
+
+    function setPrompt(text) {
+      document.getElementById('prompt-input').value = text;
+    }
+
+    function animateMoERouting(active) {
+      const statusEl = document.getElementById('routing-status');
+      if (active) {
+        statusEl.innerText = '⚡ ACTIVE TOP-2 ROUTING';
+        statusEl.style.color = '#38bdf8';
+        for (let i = 0; i < 30; i++) {
+          setTimeout(() => {
+            const el = document.getElementById(`block-${i}`);
+            if (el) el.classList.add('active');
+          }, i * 25);
+        }
+      } else {
+        statusEl.innerText = 'ONLINE (WARMED)';
+        statusEl.style.color = '#10b981';
+        setTimeout(() => {
+          for (let i = 0; i < 30; i++) {
+            const el = document.getElementById(`block-${i}`);
+            if (el) el.classList.remove('active');
+          }
+        }, 1200);
+      }
+    }
+
+    async function updateTelemetry() {
+      try {
+        const res = await fetch('/api/gpu');
+        if (res.ok) {
+          const data = await res.json();
+          document.getElementById('gpu-name').innerText = data.name || 'NVIDIA T500';
+          document.getElementById('gpu-vram').innerText = `${Math.round(data.memory_used_mb)} / ${Math.round(data.memory_total_mb)} MB`;
+          document.getElementById('gpu-load').innerText = `${Math.round(data.utilization_pct)}% | ${Math.round(data.temperature_c)}°C`;
+        }
+      } catch (err) {
+        console.warn('Telemetry fetch error:', err);
+      }
+    }
+
+    setInterval(updateTelemetry, 2500);
+    updateTelemetry();
+
+    async function runInference() {
+      const prompt = document.getElementById('prompt-input').value.trim();
+      if (!prompt) return;
+
+      const tokens = parseInt(document.getElementById('tokens-slider').value);
+      const temperature = parseFloat(document.getElementById('temp-slider').value);
+      const model = document.getElementById('model-select').value;
+
+      const btn = document.getElementById('btn-run');
+      const spinner = document.getElementById('btn-spinner');
+      const btnText = document.getElementById('btn-text');
+
+      btn.disabled = true;
+      spinner.style.display = 'inline-block';
+      btnText.innerText = 'Generating on T500...';
+
+      document.getElementById('output-echo').innerText = `Prompt: "${prompt}"`;
+      document.getElementById('output-text').innerText = 'Streaming inference from GPU...';
+      animateMoERouting(true);
+
+      const t0 = performance.now();
+
+      try {
+        const res = await fetch('/api/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ prompt, tokens, temperature, model })
+        });
+
+        const data = await res.json();
+        const clientLatency = ((performance.now() - t0) / 1000).toFixed(2);
+
+        if (data.success) {
+          document.getElementById('output-text').innerText = data.generated_text;
+          document.getElementById('stat-speed').innerText = `${data.tokens_per_second}`;
+          document.getElementById('stat-latency').innerText = `${data.elapsed_seconds}s`;
+          document.getElementById('stat-experts').innerText = '60/120';
+        } else {
+          document.getElementById('output-text').innerText = `Error: ${data.error || data.stderr || 'Inference failed'}`;
+        }
+      } catch (err) {
+        document.getElementById('output-text').innerText = `Network/Backend Error: ${err.message}`;
+      } finally {
+        btn.disabled = false;
+        spinner.style.display = 'none';
+        btnText.innerText = '⚡ Run Inference on T500';
+        animateMoERouting(false);
+        updateTelemetry();
+      }
+    }
+
+    function copyOutput() {
+      const text = document.getElementById('output-text').innerText;
+      navigator.clipboard.writeText(text);
+      alert('Copied completion to clipboard!');
+    }
+
+    function clearOutput() {
+      document.getElementById('output-echo').innerText = '';
+      document.getElementById('output-text').innerText = 'Ready for next prompt.';
+    }
+  </script>
+</body>
+</html>

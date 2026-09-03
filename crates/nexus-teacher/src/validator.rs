@@ -61,7 +61,7 @@ impl TeacherValidator {
 
         // 1. Check cache
         {
-            let cache = self.cache.read().unwrap();
+            let cache = self.cache.read().unwrap_or_else(|e| e.into_inner());
             if let Some(&score) = cache.get(&cache_key) {
                 return Ok(TeacherFeedback {
                     score,
@@ -74,7 +74,10 @@ impl TeacherValidator {
         // 2. Handle mock mode
         if self.config.mock_mode || self.mock_score.is_some() {
             let score = self.mock_score.unwrap_or(0.8);
-            let mut cache = self.cache.write().unwrap();
+            let mut cache = self.cache.write().unwrap_or_else(|e| e.into_inner());
+            if cache.len() >= 10_000 {
+                cache.clear();
+            }
             cache.insert(cache_key, score);
             return Ok(TeacherFeedback {
                 score,
@@ -122,9 +125,12 @@ impl TeacherValidator {
 
         let score = parse_score(raw_content);
 
-        // 4. Update cache
+        // 4. Update cache (bounded to 10,000 entries)
         {
-            let mut cache = self.cache.write().unwrap();
+            let mut cache = self.cache.write().unwrap_or_else(|e| e.into_inner());
+            if cache.len() >= 10_000 {
+                cache.clear();
+            }
             cache.insert(cache_key, score);
         }
 

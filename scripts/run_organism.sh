@@ -48,7 +48,7 @@ for cycle in $(seq 1 "$CYCLES"); do
         "$DATASET" \
         --with-teacher \
         --tiered \
-        --batch-size 4
+        --batch-size 2
 
     echo ""
     echo ">> [Phase B] 🌙 Sleeping state: Nightly Expert Consolidation & Pruning..."

@@ -42,7 +42,20 @@ pub fn synthetic_stream(len: usize, vocab_size: u32) -> impl Iterator<Item = Seq
 
 /// Iterator over a [`PackedDataset`](crate::data::PackedDataset).
 pub fn packed_stream(dataset: std::sync::Arc<crate::data::PackedDataset>) -> impl Iterator<Item = Sequence> + 'static {
-    (0..dataset.len()).map(move |i| Sequence { tokens: dataset.seq(i) })
+    packed_stream_from(dataset, 0)
+}
+
+/// Iterator over a [`PackedDataset`](crate::data::PackedDataset) starting at a cursor position.
+/// Wraps circularly around `dataset.len()` for infinite continuous streaming.
+pub fn packed_stream_from(
+    dataset: std::sync::Arc<crate::data::PackedDataset>,
+    start_idx: usize,
+) -> impl Iterator<Item = Sequence> + 'static {
+    let n = dataset.len().max(1);
+    (0..n).map(move |offset| {
+        let i = (start_idx + offset) % n;
+        Sequence { tokens: dataset.seq(i) }
+    })
 }
 
 /// Batches sequences into shifted (inputs, targets) pairs on the device the

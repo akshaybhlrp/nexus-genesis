@@ -141,9 +141,13 @@ where
             .next()
             .unwrap_or(f32::INFINITY);
 
-        // 2. Backward + optimizer step.
-        let grads_params = GradientsParams::from_grads(total_loss.backward(), &model);
-        model = optim.step(current_lr, model, grads_params);
+        // 2. Backward + optimizer step with numerical stability guard.
+        if loss_val.is_finite() {
+            let grads_params = GradientsParams::from_grads(total_loss.backward(), &model);
+            model = optim.step(current_lr, model, grads_params);
+        } else {
+            tracing::warn!(step, loss = loss_val, "Skipping optimizer step due to non-finite loss (numerical guard)");
+        }
 
         // 3. Update per-expert resistance from route mass in forward pass.
         for (blk_idx, route) in routes.iter().enumerate() {
@@ -162,30 +166,18 @@ where
                 let prompt_summary = format!("Step {step} High-Entropy Batch (entropy={mean_entropy:.3})");
                 let response_summary = format!("Loss={loss_val:.4}");
 
-                // Query teacher synchronously via tokio runtime or blocking fallback
-                let score = if let Ok(handle) = tokio::runtime::Handle::try_current() {
-                    let teacher_arc = Arc::clone(teacher);
-                    std::thread::spawn(move || {
-                        handle.block_on(async {
-                            teacher_arc.validate(&prompt_summary, &response_summary).await
-                        })
-                    })
-                    .join()
-                    .ok()
-                    .and_then(|res| res.ok())
-                    .map(|fb| fb.score)
-                    .unwrap_or(0.5)
-                } else {
-                    let rt = tokio::runtime::Builder::new_current_thread()
+                // Query teacher synchronously via persistent static runtime to avoid thread churn
+                static TEACHER_RT: std::sync::OnceLock<tokio::runtime::Runtime> = std::sync::OnceLock::new();
+                let rt = TEACHER_RT.get_or_init(|| {
+                    tokio::runtime::Builder::new_current_thread()
                         .enable_all()
                         .build()
-                        .ok();
-                    rt.and_then(|rt| {
-                        rt.block_on(teacher.validate(&prompt_summary, &response_summary)).ok()
-                    })
+                        .expect("init teacher runtime")
+                });
+                let score = rt
+                    .block_on(teacher.validate(&prompt_summary, &response_summary))
                     .map(|fb| fb.score)
-                    .unwrap_or(0.5)
-                };
+                    .unwrap_or(0.5);
 
                 teacher_score = Some(score);
                 if score < config.teacher_score_threshold {

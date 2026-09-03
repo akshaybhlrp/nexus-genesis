@@ -1,7 +1,7 @@
 //! Interactive terminal REPL / chat interface for native Scratch-Trained Nexus MoE digital organism.
 //!
 //! Usage:
-//!   cargo run --release -p nexus-core --bin nexus-chat -- [--temperature 0.7]
+//!   cargo run --release -p nexus-core --bin nexus-chat -- [--temperature 0.7] [--cpu]
 
 use burn::tensor::Tensor;
 use nexus_core::model::{LlamaConfig, check_token_ids};
@@ -10,50 +10,16 @@ use std::io::{self, BufRead, Write};
 use std::path::Path;
 use tokenizers::Tokenizer;
 
-type Backend = burn::backend::Wgpu;
-
-fn main() -> anyhow::Result<()> {
-    tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::WARN)
-        .init();
-
-    let args: Vec<String> = std::env::args().skip(1).collect();
-    let mut temperature = 0.7f32;
-    let max_tokens = 64usize;
-
-    let mut i = 0;
-    while i < args.len() {
-        if args[i] == "--temperature" && i + 1 < args.len() {
-            i += 1;
-            if let Ok(temp) = args[i].parse() {
-                temperature = temp;
-            }
-        }
-        i += 1;
-    }
-
-    println!("╔════════════════════════════════════════════════════════════════╗");
-    println!("║              NEXUS SCRATCH-TRAINED MOE REPL                    ║");
-    println!("║       Hardware-Agnostic Self-Evolving MoE Brain Terminal       ║");
-    println!("╚════════════════════════════════════════════════════════════════╝");
-    println!("Type 'exit', 'quit', or Ctrl-D to leave.\n");
-
-    let tok_path = Path::new("data/tokenizer.json");
-    if !tok_path.exists() {
-        eprintln!("Tokenizer '{}' not found.", tok_path.display());
-        std::process::exit(1);
-    }
-    let tokenizer = Tokenizer::from_file(tok_path)
-        .map_err(|e| anyhow::anyhow!("Failed to load tokenizer: {e}"))?;
-
+fn run_chat<B: burn::tensor::backend::Backend>(temperature: f32, tokenizer: Tokenizer) -> anyhow::Result<()> {
     let device = Default::default();
     let vocab_size = 50_257usize;
+    let max_tokens = 64usize;
 
     println!("[1/2] Initializing Scaled Scratch LLaMA Core (85M MoE Target)...");
     let cfg = LlamaConfig::new(vocab_size, 384, 12, 8)
         .with_max_seq_len(256)
         .with_d_ff(1024);
-    let dense_model = cfg.init::<Backend>(&device);
+    let dense_model = cfg.init::<B>(&device);
     println!("  ✓ Initialized 8 blocks (vocab={vocab_size}, d_model=384, d_ff=1024, heads=12)");
 
     println!("[2/2] Upcycling into Hierarchical MoE Structure (64 Experts)...");
@@ -62,7 +28,7 @@ fn main() -> anyhow::Result<()> {
 
     // Check for trained evolved experts in L3 SSD Warehouse
     let wh_cfg = nexus_memory::WarehouseConfig::default();
-    if let Ok(warehouse) = nexus_memory::ExpertWarehouse::<Backend>::new(wh_cfg) {
+    if let Ok(warehouse) = nexus_memory::ExpertWarehouse::<B>::new(wh_cfg) {
         if let Ok(count) = nexus_core::tiered::load_model_from_warehouse(&mut moe_model, &warehouse, &device) {
             if count > 0 {
                 println!("  ✓ Successfully loaded {count} evolved experts from L3 SSD Warehouse!");
@@ -136,7 +102,7 @@ fn main() -> anyhow::Result<()> {
             let seq_len = input_slice.len();
             let raw_i64: Vec<i64> = input_slice.iter().map(|&x| (x as usize % vocab_size) as i64).collect();
             let tensor_data = burn::tensor::TensorData::new(raw_i64, [1, seq_len]);
-            let input_tensor = Tensor::<Backend, 2, burn::tensor::Int>::from_data(tensor_data, &device);
+            let input_tensor = Tensor::<B, 2, burn::tensor::Int>::from_data(tensor_data, &device);
 
             check_token_ids(&input_tensor, vocab_size);
             let (logits, _balance, entropy, routes) = moe_model.forward_with_balance(input_tensor);
@@ -204,4 +170,48 @@ fn main() -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+fn main() -> anyhow::Result<()> {
+    tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::WARN)
+        .init();
+
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let mut temperature = 0.7f32;
+    let mut use_cpu = false;
+
+    let mut i = 0;
+    while i < args.len() {
+        if args[i] == "--temperature" && i + 1 < args.len() {
+            i += 1;
+            if let Ok(temp) = args[i].parse() {
+                temperature = temp;
+            }
+        } else if args[i] == "--cpu" {
+            use_cpu = true;
+        }
+        i += 1;
+    }
+
+    println!("╔════════════════════════════════════════════════════════════════╗");
+    println!("║              NEXUS SCRATCH-TRAINED MOE REPL                    ║");
+    println!("║       Hardware-Agnostic Self-Evolving MoE Brain Terminal       ║");
+    println!("╚════════════════════════════════════════════════════════════════╝");
+    println!("Backend: {} | Temperature: {temperature:.2}", if use_cpu { "CPU (NdArray)" } else { "GPU (Wgpu)" });
+    println!("Type 'exit', 'quit', or Ctrl-D to leave.\n");
+
+    let tok_path = Path::new("data/tokenizer.json");
+    if !tok_path.exists() {
+        eprintln!("Tokenizer '{}' not found.", tok_path.display());
+        std::process::exit(1);
+    }
+    let tokenizer = Tokenizer::from_file(tok_path)
+        .map_err(|e| anyhow::anyhow!("Failed to load tokenizer: {e}"))?;
+
+    if use_cpu {
+        run_chat::<burn::backend::NdArray>(temperature, tokenizer)
+    } else {
+        run_chat::<burn::backend::Wgpu>(temperature, tokenizer)
+    }
 }
