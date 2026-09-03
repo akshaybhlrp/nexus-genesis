@@ -84,43 +84,141 @@ nexus/
 
 ---
 
-## ⚡ Getting Started
+## ⚡ Getting Started & Usage Guide
 
-### 1. Prerequisites
-- **Rust Toolchain**: 1.80 or newer (`curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`)
-- Compute drivers (CUDA toolkit, ROCm, Vulkan SDK, or Xcode Command Line Tools for macOS)
+### 1. Prerequisites & Compilation
+Ensure Rust 1.80+ is installed (`curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`).
 
-### 2. Ingest Open Foundation Weights
-Nexus can initialize from scratch or ingest Hugging Face safetensors directly into native MoE expert banks:
+Build all optimized release binaries for your specific compute hardware:
 
 ```bash
-# Ingest open weights directly into tiered warehouse and upcycle to MoE
-cargo run --release -p nexus-core --bin nexus-import-hf -- data/models/smollm2-135m --upcycle --warehouse
+# NVIDIA GPUs (CUDA)
+cargo build --release --features cuda
+
+# AMD Radeon / Instinct GPUs (ROCm)
+cargo build --release --no-default-features --features rocm
+
+# Apple Silicon Macs (Metal)
+cargo build --release --no-default-features --features metal
+
+# Cross-platform Vulkan (Linux, Windows, Intel ARC, AMD)
+cargo build --release --no-default-features --features vulkan
+
+# CPU Fallback (NdArray)
+cargo build --release --no-default-features
 ```
 
-### 3. Run Autonomous Hourly Daemon
-Launch the continuous self-evolution daemon. The script automatically probes host hardware, assigns optimal backends, acquires a PID lock, and begins the 4-phase biological cycle:
+### 2. Dataset Preparation
+Nexus streams pre-tokenized binary sequences (`[u32 vocab][u32 seq_len][u32 n_seqs]...`).
+
+- **Zero-Setup Quickstart**: If no dataset is specified, Nexus automatically streams infinite synthetic data for immediate exploration.
+- **Custom Tokenized Stream**: Convert any Parquet dataset into a binary stream using `nexus-pack-data`:
+  ```bash
+  cargo run --release -p nexus-core --bin nexus-pack-data -- \
+      --tokenizer data/tokenizer.json \
+      --out data/my_stream.bin \
+      --seq-len 128 \
+      --max-tokens 50000000 \
+      path/to/dataset/*.parquet
+  ```
+
+### 3. Foundation Weight Ingestion (Optional)
+Nexus can train from scratch or ingest and upcycle open Hugging Face weights into dynamic MoE expert banks:
 
 ```bash
+cargo run --release -p nexus-core --bin nexus-import-hf -- \
+    data/models/smollm2-135m \
+    --upcycle \
+    --warehouse
+```
+
+### 4. Running the Biological Life Cycle
+
+#### Option A: Autonomous 24/7 Production Daemon
+Run continuous self-evolution in the background. The script builds once upfront, probes hardware, acquires a single-instance PID lock, manages log rotation, and loops every hour:
+
+```bash
+# Run foreground
 bash scripts/nexus_hourly_train.sh
+
+# Or run persistent in background
+nohup bash scripts/nexus_hourly_train.sh > data/nexus_daemon.log 2>&1 &
 ```
 
-### 4. Interactive Text Generation
-Sample tokens natively from the trained checkpoint:
+#### Option B: Step-by-Step Manual Execution
+You can execute each biological phase individually using the pre-compiled binaries:
 
 ```bash
-cargo run --release -p nexus-core --bin nexus-generate -- \
-    "The fundamental law of intelligence states that" \
-    --model data/models/smollm2-135m-rectified \
+# Phase 1: Awakening (Hybrid MoE Training with Halley-Muon)
+./target/release/nexus-train-hybrid 50 data/my_stream.bin \
+    --model data/models/smollm2-135m \
+    --checkpoint-dir data/checkpoints \
+    --batch-size 1 \
+    --layers 4 \
+    --experts 4
+
+# Phase 2: Sleep (SVD Memory Consolidation & Expert Pruning)
+./target/release/nexus-consolidate 0.95 0.02 \
+    --checkpoint-dir data/checkpoints \
+    --model data/models/smollm2-135m \
+    --layers 4
+
+# Phase 3: Mirror (Held-Out Perplexity & Catastrophic Forgetting Eval)
+./target/release/nexus-eval data/my_stream.bin \
+    --model data/models/smollm2-135m \
+    --layers 4 \
+    --n-seqs 20
+
+# Phase 4: Voice (Native Text Generation)
+./target/release/nexus-generate "The fundamental law of intelligence states that" \
+    --model data/models/smollm2-135m \
+    --layers 4 \
     --tokens 50 \
     --temperature 0.7
 ```
 
-### 5. Launch Low-Latency Inference Server
-Run the resident GPU inference server:
+### 5. Interactive Chat & Serving
+Interact with the organism via interactive terminal chat or the low-latency resident inference server:
 
 ```bash
-cargo run --release -p nexus-core --bin nexus-serve -- --model data/models/smollm2-135m-rectified
+# Interactive CLI Conversation
+./target/release/nexus-chat --model data/models/smollm2-135m
+
+# Resident GPU Inference Server (serves stdin/stdout JSON queries)
+./target/release/nexus-serve --model data/models/smollm2-135m
+```
+
+---
+
+## 🛠️ Production Deployment (Systemd)
+
+To run Nexus as an autonomous Linux service that automatically restarts across system reboots:
+
+Create `/etc/systemd/system/nexus.service`:
+```ini
+[Unit]
+Description=Nexus Autonomous Self-Evolving Organism
+After=network.target
+
+[Service]
+Type=simple
+User=akshay-bhalerao
+WorkingDirectory=/home/akshay-bhalerao/Documents/AI/nexus
+ExecStart=/bin/bash /home/akshay-bhalerao/Documents/AI/nexus/scripts/nexus_hourly_train.sh
+Restart=always
+RestartSec=30
+Environment=NEXUS_LAYERS=4
+Environment=NEXUS_BATCH_SIZE=1
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Enable and start the service:
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now nexus.service
+sudo systemctl status nexus.service
 ```
 
 ---
@@ -136,7 +234,7 @@ All binaries accept standard CLI flags and environment variables:
 | `--experts <N>` | `EXPERTS` | `4` | Number of experts per MoE block |
 | `--lr <FLOAT>` | `NEXUS_LR` | `0.0003` | Base learning rate for AdamW / Muon |
 | `--checkpoint-dir <P>`| `CHECKPOINT_DIR`| `data/checkpoints` | Atomic checkpoint storage directory |
-| `--model <P>` | `MODEL` | SmolLM2 rectified | Foundation model directory |
+| `--model <P>` | `MODEL` | SmolLM2 | Foundation model directory |
 | `--dataset <P>` | `DATASET` | `data/full_50m_stream.bin` | Packed binary dataset stream |
 | `--backend <NAME>` | `NEXUS_BACKEND` | Auto-detected | Force compute backend (`cuda`, `rocm`, `vulkan`, `metal`) |
 

@@ -69,6 +69,21 @@ echo "  Hardware Acceleration: $HW_DESC [Backend: $BACKEND_FEATURE]" | tee -a "$
 echo "  Model: $MODEL | Dataset: $DATASET | Steps/Hour: $STEPS | Layers: $LAYERS | Batch: $BATCH_SIZE" | tee -a "$REPORT_FILE"
 echo "==================================================================" | tee -a "$REPORT_FILE"
 
+TRAIN_BIN="target/release/nexus-train-hybrid"
+CONSOLIDATE_BIN="target/release/nexus-consolidate"
+EVAL_BIN="target/release/nexus-eval"
+GENERATE_BIN="target/release/nexus-generate"
+
+# Build release binaries once upfront if missing or outdated
+if [ ! -f "$TRAIN_BIN" ] || [ ! -f "$CONSOLIDATE_BIN" ] || [ ! -f "$EVAL_BIN" ] || [ ! -f "$GENERATE_BIN" ]; then
+    echo "⚙️ Compiling optimized release binaries for $BACKEND_FEATURE..." | tee -a "$REPORT_FILE"
+    if [ "$BACKEND_FEATURE" = "cuda" ]; then
+        cargo build --release -p nexus-core -p nexus-eval --features cuda
+    else
+        cargo build --release -p nexus-core -p nexus-eval --no-default-features --features "$BACKEND_FEATURE"
+    fi
+fi
+
 cycle=1
 while true; do
     TIMESTAMP=$(date "+%Y-%m-%d %H:%M:%S")
@@ -78,8 +93,7 @@ while true; do
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" | tee -a "$REPORT_FILE"
 
     echo ">> [Phase 1/4] 🧠 Hybrid Training & Backprop ($BACKEND_FEATURE)..." | tee -a "$REPORT_FILE"
-    cargo run --release -p nexus-core --bin nexus-train-hybrid \
-        --no-default-features --features "$BACKEND_FEATURE" -- \
+    "$TRAIN_BIN" \
         "$STEPS" \
         "$DATASET" \
         --model "$MODEL" \
@@ -90,14 +104,12 @@ while true; do
 
     echo "" | tee -a "$REPORT_FILE"
     echo ">> [Phase 2/4] 🌙 Sleeping: SVD Memory Consolidation & Pruning ($BACKEND_FEATURE)..." | tee -a "$REPORT_FILE"
-    cargo run --release -p nexus-core --bin nexus-consolidate \
-        --no-default-features --features "$BACKEND_FEATURE" -- \
+    "$CONSOLIDATE_BIN" \
         0.95 0.02 --checkpoint-dir data/checkpoints --model "$MODEL" --layers "$LAYERS" 2>&1 | tee -a "$REPORT_FILE"
 
     echo "" | tee -a "$REPORT_FILE"
     echo ">> [Phase 3/4] 🪞 Mirror: Held-Out Perplexity & Retention Eval ($BACKEND_FEATURE)..." | tee -a "$REPORT_FILE"
-    cargo run --release -p nexus-eval --bin nexus-eval \
-        --no-default-features --features "$BACKEND_FEATURE" -- \
+    "$EVAL_BIN" \
         "$DATASET" \
         --model "$MODEL" \
         --layers "$LAYERS" \
@@ -105,8 +117,7 @@ while true; do
 
     echo "" | tee -a "$REPORT_FILE"
     echo ">> [Phase 4/4] 🗣️ Voice: Sampling Text Progression ($BACKEND_FEATURE)..." | tee -a "$REPORT_FILE"
-    cargo run --release -p nexus-core --bin nexus-generate \
-        --no-default-features --features "$BACKEND_FEATURE" -- \
+    "$GENERATE_BIN" \
         "The fundamental law of intelligence states that" \
         --model "$MODEL" \
         --layers "$LAYERS" \
