@@ -77,12 +77,9 @@ nexus/
 │   ├── nexus-emns/         # Emergent Macro-Resistance Mutation Kernels
 │   └── nexus-weight-gen/   # Invariant-Preserving Weight Initializers
 ├── scripts/
-│   ├── nexus_hourly_train.sh  # Autonomous 24/7 background self-evolution daemon
-│   ├── rectify_smollm.py      # Ingests & rectifies Hugging Face weights to Nexus layout
-│   └── train_and_shutdown.sh  # Scheduled execution with automated host poweroff
+│   └── nexus_hourly_train.sh  # Autonomous 24/7 background self-evolution daemon
 └── ui/
-    ├── index.html             # Glassmorphic real-time telemetry dashboard
-    └── server.py              # WebSocket telemetry bridge & API gateway
+    └── index.html             # Glassmorphic real-time telemetry dashboard
 ```
 
 ---
@@ -91,15 +88,14 @@ nexus/
 
 ### 1. Prerequisites
 - **Rust Toolchain**: 1.80 or newer (`curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`)
-- **Python 3.10+** (for dataset tokenization and UI server)
 - Compute drivers (CUDA toolkit, ROCm, Vulkan SDK, or Xcode Command Line Tools for macOS)
 
-### 2. Ingest Foundation Model (SmolLM2)
-Nexus can build from scratch or ingest and rectify existing open weights:
+### 2. Ingest Open Foundation Weights
+Nexus can initialize from scratch or ingest Hugging Face safetensors directly into native MoE expert banks:
 
 ```bash
-# Ingest and rectify SmolLM2-135M into Nexus binary tensor layout
-python3 scripts/rectify_smollm.py
+# Ingest open weights directly into tiered warehouse and upcycle to MoE
+cargo run --release -p nexus-core --bin nexus-import-hf -- data/models/smollm2-135m --upcycle --warehouse
 ```
 
 ### 3. Run Autonomous Hourly Daemon
@@ -120,12 +116,11 @@ cargo run --release -p nexus-core --bin nexus-generate -- \
     --temperature 0.7
 ```
 
-### 5. Launch Real-time Web Dashboard
-Monitor live loss trajectories, expert activity heatmaps, and routing entropy:
+### 5. Launch Low-Latency Inference Server
+Run the resident GPU inference server:
 
 ```bash
-python3 ui/server.py
-# Open http://localhost:8080 in your browser
+cargo run --release -p nexus-core --bin nexus-serve -- --model data/models/smollm2-135m-rectified
 ```
 
 ---
