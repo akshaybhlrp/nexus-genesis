@@ -1,0 +1,83 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check-linux:
+    name: Check Linux (CUDA, Vulkan, ROCm, WGPU)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install Vulkan headers
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libvulkan-dev
+
+      - name: Cargo Check Default (CUDA backend)
+        run: cargo check --workspace
+
+      - name: Cargo Check Vulkan Backend
+        run: cargo check --workspace --no-default-features --features vulkan
+
+      - name: Cargo Check WGPU Backend
+        run: cargo check --workspace --no-default-features --features wgpu
+
+      - name: Cargo Check ROCm Backend
+        run: cargo check --workspace --no-default-features --features rocm
+
+  check-macos:
+    name: Check macOS (Metal Backend)
+    runs-on: macos-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Cargo Check Metal Backend
+        run: cargo check --workspace --no-default-features --features metal
+
+  test:
+    name: Run Test Suite
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Test nexus-memory (Tiered Warehouse & Caches)
+        run: cargo test -p nexus-memory
+
+      - name: Test nexus-emns (Mutation & Resistance)
+        run: cargo test -p nexus-emns --no-default-features --features wgpu
+
+      - name: Test nexus-eval (Mirror Eval)
+        run: cargo test -p nexus-eval --no-default-features --features wgpu

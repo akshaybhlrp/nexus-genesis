@@ -1,0 +1,68 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-release:
+    name: Build Release Binaries
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            artifact_name: nexus-linux-x86_64.tar.gz
+            features: "vulkan"
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            artifact_name: nexus-macos-arm64.tar.gz
+            features: "metal"
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libvulkan-dev
+
+      - name: Build release binaries
+        run: |
+          cargo build --release --target ${{ matrix.target }} --no-default-features --features ${{ matrix.features }}
+
+      - name: Package binaries
+        run: |
+          mkdir -p package
+          cp target/${{ matrix.target }}/release/nexus-train-hybrid package/ 2>/dev/null || true
+          cp target/${{ matrix.target }}/release/nexus-consolidate package/ 2>/dev/null || true
+          cp target/${{ matrix.target }}/release/nexus-eval package/ 2>/dev/null || true
+          cp target/${{ matrix.target }}/release/nexus-generate package/ 2>/dev/null || true
+          cp target/${{ matrix.target }}/release/nexus-serve package/ 2>/dev/null || true
+          cp target/${{ matrix.target }}/release/nexus-chat package/ 2>/dev/null || true
+          cp README.md LICENSE package/
+          tar -czvf ${{ matrix.artifact_name }} -C package .
+
+      - name: Upload Release Asset
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: ${{ matrix.artifact_name }}
+          draft: false
+          prerelease: false

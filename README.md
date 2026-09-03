@@ -4,6 +4,7 @@
 
 **An Autonomous, Continuously Self-Evolving Neural Organism Built in Pure Rust**
 
+[![CI](https://github.com/akshaybhlrp/nexus-genesis/actions/workflows/ci.yml/badge.svg)](https://github.com/akshaybhlrp/nexus-genesis/actions/workflows/ci.yml)
 [![Rust](https://img.shields.io/badge/rust-1.80%2B-orange.svg)](https://www.rust-lang.org/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Burn](https://img.shields.io/badge/engine-Burn%200.21-purple.svg)](https://burn.dev/)
