@@ -76,10 +76,8 @@ nexus/
 │   ├── nexus-teacher/      # External Teacher Validation & LRU Cache
 │   ├── nexus-emns/         # Emergent Macro-Resistance Mutation Kernels
 │   └── nexus-weight-gen/   # Invariant-Preserving Weight Initializers
-├── scripts/
-│   └── nexus_hourly_train.sh  # Autonomous 24/7 background self-evolution daemon
 └── ui/
-    └── index.html             # Glassmorphic real-time telemetry dashboard
+    └── index.html          # Glassmorphic real-time telemetry dashboard
 ```
 
 ---
@@ -134,19 +132,7 @@ cargo run --release -p nexus-core --bin nexus-import-hf -- \
 
 ### 4. Running the Biological Life Cycle
 
-#### Option A: Autonomous 24/7 Production Daemon
-Run continuous self-evolution in the background. The script builds once upfront, probes hardware, acquires a single-instance PID lock, manages log rotation, and loops every hour:
-
-```bash
-# Run foreground
-bash scripts/nexus_hourly_train.sh
-
-# Or run persistent in background
-nohup bash scripts/nexus_hourly_train.sh > data/nexus_daemon.log 2>&1 &
-```
-
-#### Option B: Step-by-Step Manual Execution
-You can execute each biological phase individually using the pre-compiled binaries:
+Execute each biological phase directly using the compiled native Rust binaries:
 
 ```bash
 # Phase 1: Awakening (Hybrid MoE Training with Halley-Muon)
@@ -190,35 +176,43 @@ Interact with the organism via interactive terminal chat or the low-latency resi
 
 ---
 
-## 🛠️ Production Deployment (Systemd)
+## 🛠️ Production Deployment (Systemd Timer)
 
-To run Nexus as an autonomous Linux service that automatically restarts across system reboots:
+Run Nexus autonomously using native Linux systemd timers without any bash scripts:
 
 Create `/etc/systemd/system/nexus.service`:
 ```ini
 [Unit]
-Description=Nexus Autonomous Self-Evolving Organism
+Description=Nexus Autonomous Self-Evolving Cycle
 After=network.target
 
 [Service]
-Type=simple
-User=akshay-bhalerao
-WorkingDirectory=/home/akshay-bhalerao/Documents/AI/nexus
-ExecStart=/bin/bash /home/akshay-bhalerao/Documents/AI/nexus/scripts/nexus_hourly_train.sh
-Restart=always
-RestartSec=30
-Environment=NEXUS_LAYERS=4
-Environment=NEXUS_BATCH_SIZE=1
-
-[Install]
-WantedBy=multi-user.target
+Type=oneshot
+WorkingDirectory=/path/to/nexus
+ExecStart=/path/to/nexus/target/release/nexus-train-hybrid 50 data/full_50m_stream.bin --layers 4 --batch-size 1
+ExecStartPost=/path/to/nexus/target/release/nexus-consolidate 0.95 0.02 --layers 4
+ExecStartPost=/path/to/nexus/target/release/nexus-eval data/full_50m_stream.bin --layers 4 --n-seqs 20
+ExecStartPost=/path/to/nexus/target/release/nexus-generate "The fundamental law of intelligence states that" --layers 4 --tokens 30
 ```
 
-Enable and start the service:
+Create `/etc/systemd/system/nexus.timer`:
+```ini
+[Unit]
+Description=Run Nexus self-evolution cycle hourly
+
+[Timer]
+OnCalendar=hourly
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+```
+
+Enable and start the timer:
 ```bash
 sudo systemctl daemon-reload
-sudo systemctl enable --now nexus.service
-sudo systemctl status nexus.service
+sudo systemctl enable --now nexus.timer
+sudo systemctl list-timers | grep nexus
 ```
 
 ---
