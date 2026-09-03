@@ -104,7 +104,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    type TB = burn::backend::Wgpu;
+    type TB = burn::backend::NdArray;
     type TAB = burn::backend::Autodiff<TB>;
 
     #[test]

@@ -6,7 +6,7 @@ use nexus_core::stream::synthetic_stream;
 use nexus_teacher::TeacherValidator;
 use std::sync::Arc;
 
-type TestBackend = Autodiff<burn::backend::Wgpu>;
+type TestBackend = Autodiff<burn::backend::NdArray>;
 
 #[test]
 fn test_hybrid_training_with_teacher_feedback() {

@@ -5,7 +5,7 @@ use nexus_core::moe::{upcycle_dense, RouterConfig};
 use nexus_memory::{ExpertWarehouse, WarehouseConfig};
 use tempfile::tempdir;
 
-type TestBackend = burn::backend::Wgpu;
+type TestBackend = burn::backend::NdArray;
 
 #[test]
 fn test_expert_similarity_and_merging() -> anyhow::Result<()> {

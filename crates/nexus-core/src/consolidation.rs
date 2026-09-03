@@ -265,7 +265,7 @@ mod tests {
     use crate::model::LlamaConfig;
     use crate::moe::{RouterConfig, upcycle_dense};
 
-    type TestBackend = burn::backend::Wgpu;
+    type TestBackend = burn::backend::NdArray;
 
     #[test]
     fn test_tensor_cosine_similarity() {

@@ -10,8 +10,8 @@ use std::io::Write;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-/// GPU backend used by every tensor-level test.
-pub type TB = burn::backend::Wgpu;
+/// CPU backend used by tests on headless CI runners.
+pub type TB = burn::backend::NdArray;
 
 /// Tiny config: fast init + forward, small enough for many iterations.
 pub fn tiny_cfg() -> LlamaConfig {
@@ -20,7 +20,7 @@ pub fn tiny_cfg() -> LlamaConfig {
         .with_d_ff(64)
 }
 
-pub fn device() -> burn::backend::wgpu::WgpuDevice {
+pub fn device() -> burn::backend::ndarray::NdArrayDevice {
     Default::default()
 }
 

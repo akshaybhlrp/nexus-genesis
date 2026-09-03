@@ -109,7 +109,7 @@ mod tests {
     use crate::moe::{RouterConfig, upcycle_dense};
     use tempfile::tempdir;
 
-    type TestBackend = burn::backend::Wgpu;
+    type TestBackend = burn::backend::NdArray;
 
     #[test]
     fn test_global_expert_id_roundtrip() {

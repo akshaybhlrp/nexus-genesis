@@ -291,7 +291,7 @@ impl<B: Backend> MoELlama<B> {
 mod tests {
     use super::*;
     use crate::model::LlamaConfig;
-    type TestB = burn::backend::Wgpu;
+    type TestB = burn::backend::NdArray;
 
     #[test]
     fn upcycle_preserves_shapes_and_routes() {

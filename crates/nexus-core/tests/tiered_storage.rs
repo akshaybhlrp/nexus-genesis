@@ -6,7 +6,7 @@ use nexus_memory::{ExpertWarehouse, WarehouseConfig};
 use std::sync::Arc;
 use tempfile::tempdir;
 
-type TestBackend = burn::backend::Wgpu;
+type TestBackend = burn::backend::NdArray;
 
 #[test]
 fn test_tiered_model_persistence_and_restore() -> anyhow::Result<()> {

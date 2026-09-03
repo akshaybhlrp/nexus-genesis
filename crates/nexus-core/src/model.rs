@@ -253,7 +253,7 @@ pub fn generate_padic_embeddings<B: Backend>(
 #[cfg(all(test, feature = "wgpu"))]
 mod tests {
     use super::*;
-    type TestB = burn::backend::Wgpu;
+    type TestB = burn::backend::NdArray;
 
     fn tiny() -> LlamaConfig {
         LlamaConfig::new(256, 64, 4, 2).with_max_seq_len(32).with_d_ff(128)
