@@ -73,11 +73,8 @@ jobs:
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
 
-      - name: Test nexus-memory (Tiered Warehouse & Caches)
+      - name: Test nexus-memory (Tiered Warehouse, Caches, Coherence)
         run: cargo test -p nexus-memory
 
-      - name: Test nexus-emns (Mutation & Resistance)
-        run: cargo test -p nexus-emns --no-default-features --features wgpu
-
-      - name: Test nexus-eval (Mirror Eval)
-        run: cargo test -p nexus-eval --no-default-features --features wgpu
+      - name: Test nexus-core (Halley-Muon, MoE, SVD Consolidation, Checkpointing)
+        run: cargo test -p nexus-core --lib

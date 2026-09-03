@@ -14,9 +14,9 @@ use nexus_memory::{
 use std::sync::Arc;
 use tempfile::tempdir;
 
-type TestBackend = burn::backend::Wgpu;
+type TestBackend = burn::backend::NdArray;
 
-fn device() -> burn::backend::wgpu::WgpuDevice {
+fn device() -> burn::backend::ndarray::NdArrayDevice {
     Default::default()
 }
 

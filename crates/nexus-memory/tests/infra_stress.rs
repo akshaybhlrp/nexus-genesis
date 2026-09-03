@@ -11,7 +11,7 @@ use nexus_memory::warehouse::{
 use std::collections::HashMap;
 use std::sync::Arc;
 
-type TB = burn::backend::Wgpu;
+type TB = burn::backend::NdArray;
 
 fn mk_config(tmp: &tempfile::TempDir) -> WarehouseConfig {
     WarehouseConfig {

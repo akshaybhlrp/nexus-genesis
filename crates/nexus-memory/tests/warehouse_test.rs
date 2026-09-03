@@ -4,7 +4,7 @@ use burn::tensor::Tensor;
 use std::sync::Arc;
 use tempfile::tempdir;
 
-type TestBackend = burn::backend::Wgpu;
+type TestBackend = burn::backend::NdArray;
 
 #[tokio::test]
 async fn test_warehouse_tiered_caching_and_eviction() -> anyhow::Result<()> {

@@ -272,7 +272,7 @@ impl<B: Backend> ExpertWarehouse<B> {
 mod tests {
     use super::*;
 
-    type TestBackend = burn::backend::Wgpu;
+    type TestBackend = burn::backend::NdArray;
 
     #[test]
     fn test_serialized_tensor_roundtrip() {
